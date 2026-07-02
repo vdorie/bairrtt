@@ -1,0 +1,14 @@
+The bairrtt package as a whole is licensed under the GPL (>= 2).
+Copyright (c) 2026 Vincent Dorie.
+
+It bundles third-party code under a different, compatible license:
+
+  WALNUTS (C++ header library, used to sample the IRT item parameters)
+    Files:    inst/include/walnuts.hpp, inst/include/walnuts/*.hpp
+    License:  MIT
+    Copyright (c) 2025 Bob Carpenter
+    Full text: inst/include/WALNUTS_LICENSE
+    Upstream:  https://github.com/bob-carpenter/walnuts
+
+The MIT license is compatible with the GPL, so the combined work is
+distributable under the GPL (>= 2). See also inst/COPYRIGHTS.

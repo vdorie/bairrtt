@@ -1,0 +1,12 @@
+bairrtt bundles the WALNUTS C++ header library under inst/include/walnuts
+(and inst/include/walnuts.hpp), used to draw the IRT item parameters.
+
+WALNUTS is distributed under the MIT License:
+
+    Copyright (c) 2025 Bob Carpenter
+
+The full license text is in inst/include/WALNUTS_LICENSE. Upstream:
+https://github.com/bob-carpenter/walnuts (Adaptive WALNUTS in C++).
+
+All other files are Copyright (c) 2026 Vincent Dorie and distributed under the
+GPL (>= 2), the license of the package as a whole.

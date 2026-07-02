@@ -1,0 +1,4 @@
+# WALNUTS uses C++20 concepts. Eigen is supplied by LinkingTo: RcppEigen; the
+# vendored WALNUTS headers live in ../inst/include (installed to inst/include).
+CXX_STD = CXX20
+PKG_CPPFLAGS = -I../inst/include

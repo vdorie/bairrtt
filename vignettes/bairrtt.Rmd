@@ -1,0 +1,140 @@
+---
+title: "Causal inference with a latent IRT confounder"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Causal inference with a latent IRT confounder}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", fig.width = 6, fig.height = 4)
+```
+
+## The model
+
+`bairrtt` fits a causal model in which a latent person trait `theta` is both
+
+* the ability parameter in a two-parameter logistic (2PL) item-response model,
+  measured by a matrix of 0/1 item responses, and
+* a confounder between a binary treatment `z` and a continuous outcome `y`.
+
+Because `theta` is unobserved and drives both treatment assignment and the
+outcome, ignoring it biases the treatment effect. Two BART surfaces (from
+[dbarts](https://cran.r-project.org/package=dbarts)) model the outcome
+`y ~ f(z, theta)` and the assignment `z ~ f(theta)` flexibly, while the IRT
+measurement model ties `theta` to the item responses. The pieces are sampled in
+a Gibbs loop:
+
+* `theta` -- one per-person random-walk Metropolis move, then installed into
+  both BART models by a joint per-observation sweep that rejects any value which
+  would empty a tree leaf (a zero-prior tree);
+* the trees -- one BART update each, conditional on `theta`;
+* the IRT item parameters `(alpha, beta)` -- drawn conditional on `theta` by the
+  gradient-based [WALNUTS](https://github.com/bob-carpenter/walnuts) sampler,
+  which adapts during burn-in and is then frozen.
+
+## Simulate data
+
+`simulate_irt_causal()` draws from this model. Treatment depends on `theta`, so
+a naive treatment/outcome comparison is confounded.
+
+```{r simulate}
+library(bairrtt)
+
+sim <- simulate_irt_causal(n_persons = 300, n_items = 40, ate = -0.2, seed = 42)
+str(sim, max.level = 1)
+
+# naive (confounded) difference in means -- biased for the true effect (-0.2)
+mean(sim$y[sim$z == 1]) - mean(sim$y[sim$z == 0])
+```
+
+## Fit
+
+`irt_causal_bart()` runs the whole sampler. The run below is deliberately small
+so the vignette builds quickly; recovery sharpens with more persons/items and
+longer chains.
+
+```{r fit}
+fit <- irt_causal_bart(
+  sim$responses, sim$y, sim$z,
+  n_burnin = 100, n_sampling = 250, seed = 42
+)
+```
+
+## Treatment effect
+
+The estimand is `E[f(1, theta) - f(0, theta)]`, accumulated from the response
+surface each scan. Its posterior recovers the true effect (`-0.2`), unlike the
+naive comparison above.
+
+```{r ate}
+c(mean = mean(fit$ate),
+  lower = quantile(fit$ate, 0.025, names = FALSE),
+  upper = quantile(fit$ate, 0.975, names = FALSE))
+
+hist(fit$ate, breaks = 30, main = "Posterior of the treatment effect",
+     xlab = "ATE")
+abline(v = sim$ate, col = "red", lwd = 2)
+```
+
+## Item parameters
+
+The IRT item parameters are recovered too. Difficulty is read on the observable
+scale --- each item's expected proportion-correct in the population, its
+*endorsement* probability --- rather than as the raw latent `beta`, whose scale
+is fixed only by convention and is stretched by the finite number of items
+measuring each person; discrimination sharpens as that number grows.
+
+```{r items}
+alpha_hat <- colMeans(fit$alpha)
+
+# standard-normal population, for integrating each item's characteristic curve
+grid <- qnorm(ppoints(200))
+
+# an item's expected proportion-correct over the population: an observable-scale
+# difficulty, free of the latent metric that inflates the raw beta coordinate
+endorsement <- function(alpha, beta)
+  vapply(seq_along(beta),
+         function(i) mean(plogis(alpha[i] * (grid - beta[i]))),
+         numeric(1))
+
+pi_true <- endorsement(sim$alpha, sim$beta)
+pi_hat  <- rowMeans(vapply(seq_len(nrow(fit$beta)),
+                           function(s) endorsement(fit$alpha[s, ], fit$beta[s, ]),
+                           numeric(ncol(fit$beta))))
+
+c(alpha_cor      = cor(alpha_hat, sim$alpha),
+  difficulty_cor = cor(pi_hat,    pi_true))
+
+plot(qlogis(pi_true), qlogis(pi_hat),
+     xlab = "true difficulty (logit endorsement)", ylab = "posterior mean",
+     main = "Item difficulties"); abline(0, 1, col = "red")
+```
+
+## Diagnostics
+
+The per-person `theta` acceptance rate is adapted toward its target (0.44 by
+default) during burn-in and then frozen, and the WALNUTS item sampler is frozen
+for the sampling phase.
+
+```{r diagnostics}
+mean(tail(fit$theta_accept, 250))   # sampling-phase theta acceptance
+fit$theta_sd                        # frozen proposal SD
+fit$tuning$frozen                   # WALNUTS frozen?
+```
+
+## Reusing the WALNUTS item sampler
+
+The item-parameter sampler is also exported on its own, for use inside other
+models. Create it once, adapt with `irt_warmup()` while conditioning on a
+(possibly changing) `theta`, `irt_freeze()`, then draw with `irt_draw()`.
+
+```{r engine}
+s <- irt_item_sampler(sim$responses, alpha = rep(1, 40), beta = rep(0, 40),
+                      seed = 1)
+for (i in 1:50) invisible(irt_warmup(s, sim$theta))   # adapt
+irt_freeze(s)
+draw <- irt_draw(s, sim$theta)                         # c(alpha, beta)
+head(draw)
+```

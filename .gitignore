@@ -1,0 +1,20 @@
+# R build artifacts
+src/*.o
+src/*.so
+src/*.dll
+src/*.rds
+/*.tar.gz
+/*.Rcheck/
+
+# R session / IDE
+.Rproj.user/
+.Rhistory
+.RData
+.Ruserdata
+*.Rproj
+
+# OS
+.DS_Store
+
+# user
+*.swp
