@@ -79,6 +79,25 @@ Only disjoint banks are supported. Genuine multidimensional IRT, where one item
 loads on several traits, is identified only up to a rotation of the loadings and
 needs a constraint this interface does not express.
 
+## Several chains
+
+IRT models invite multimodality --- nothing separates `theta` from `-theta` but
+the sign constraint on the discriminations --- and a single chain that settled in
+the wrong mode looks healthy from the inside. Run several and compare them.
+
+```r
+fits <- irt_causal_bart(sim$responses, sim$y, sim$z,
+                        n_burnin = 500, n_sampling = 1000,
+                        n_chains = 4, n_cores = 4, seed = 1)
+fits                                  # chains, pooled ate, max R-hat
+
+irt_rhat(fits)$max                    # rank-normalized split R-hat
+mean(irt_chain_draws(fits, "ate"))    # pooled over all chains
+```
+
+A chain's seed determines it completely, so `n_cores` changes only the wall
+clock, never the draws. It forks, so it is a no-op on Windows.
+
 ## The WALNUTS item sampler
 
 The item-parameter sampler is exported for reuse in other models. Hold `theta`

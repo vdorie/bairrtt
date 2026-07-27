@@ -23,11 +23,13 @@ Depends: R (>= 4.3.0)
 Imports:
     Rcpp,
     dbarts (>= 1.0.0),
+    parallel,
     stats
 LinkingTo: Rcpp, RcppEigen
 Suggests:
     tinytest,
     knitr,
+    posterior,
     rmarkdown
 SystemRequirements: C++20
 VignetteBuilder: knitr

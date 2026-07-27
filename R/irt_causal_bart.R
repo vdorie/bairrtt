@@ -49,16 +49,33 @@
 #'   each BART model (interior quantiles of a standard normal).
 #' @param n_trees Number of trees in each BART surface.
 #' @param n_threads Number of threads for the BART updates.
+#' @param n_chains Number of independent chains. At `1` (the default) the return
+#'   value is the single fit described below; above `1` it is an
+#'   `"irt_causal_chains"` object, which is what [irt_rhat()] needs.
+#' @param n_cores Number of chains to run at once. A chain owns mutable dbarts
+#'   samplers and an external-pointer WALNUTS state, so chains are separate
+#'   processes rather than threads: this uses [parallel::mclapply()] and so has
+#'   no effect on Windows, where the chains run sequentially. Draws do not depend
+#'   on it either way.
 #' @param seed Integer seed. This calls [set.seed()] internally, so it
 #'   overwrites the global RNG state (`.Random.seed`) as a side effect; it also
 #'   seeds each WALNUTS sampler's own (independent) RNG, bank `k` getting
 #'   `seed + k - 1`. `y`, `z`, and `responses` may be numeric or logical, but not
 #'   factors; `y` must not contain `NA`.
+#' @param seeds Chain seeds, length `n_chains`, overriding `seed`. The default
+#'   spaces chains `n_traits` apart (`seed`, `seed + n_traits`, ...) so that no
+#'   two chains share a WALNUTS stream. A chain's seed determines it completely,
+#'   which is why chains need no coordination to run in parallel.
 #' @param keep_theta If `TRUE`, also return the per-scan `theta` draws. Off by
 #'   default to keep the result small.
 #' @param verbose If `TRUE`, print progress periodically.
 #'
-#' @return A list of draws and diagnostics:
+#' @return With `n_chains > 1`, an `"irt_causal_chains"` object: a list holding
+#'   `chains` (one ordinary single-chain fit per element, exactly as below),
+#'   `seeds`, `n_chains`, `n_traits`, and the `call`. Use [irt_chain_draws()] to
+#'   pool draws across chains and [irt_rhat()] to check that they agree.
+#'
+#'   With `n_chains = 1`, a list of draws and diagnostics:
 #'   \describe{
 #'     \item{`ate`}{Length-`n_sampling` vector of treatment-effect draws.}
 #'     \item{`alpha`, `beta`}{`n_sampling` x `n_items` matrices of item-parameter
@@ -92,7 +109,16 @@
 #' mean(fit2$ate)
 #' length(fit2$alpha)                 # one item-parameter matrix per bank
 #'
-#' @seealso [simulate_irt_causal()], [irt_item_sampler()]
+#' # four chains, for a between-chain convergence check
+#' fits <- irt_causal_bart(sim$responses, sim$y, sim$z,
+#'                         n_burnin = 100, n_sampling = 200,
+#'                         n_chains = 4, seed = 1)
+#' fits
+#' irt_rhat(fits)$ate
+#' mean(irt_chain_draws(fits, "ate"))  # pooled over all four chains
+#'
+#' @seealso [simulate_irt_causal()], [irt_item_sampler()], [irt_rhat()],
+#'   [irt_chain_draws()]
 #' @importFrom stats dnorm pnorm plogis qnorm reformulate rnorm rexp
 #' @export
 irt_causal_bart <- function(
@@ -109,7 +135,10 @@ irt_causal_bart <- function(
   n_theta_cutpoints = 100L,
   n_trees = 75L,
   n_threads = 1L,
+  n_chains = 1L,
+  n_cores = 1L,
   seed = 1L,
+  seeds = NULL,
   keep_theta = FALSE,
   verbose = FALSE
 ) {
@@ -173,6 +202,96 @@ irt_causal_bart <- function(
     paste0("theta", seq_len(n_traits))
   }
 
+  n_chains <- as.integer(n_chains)
+  if (length(n_chains) != 1L || is.na(n_chains) || n_chains < 1L) {
+    stop("'n_chains' must be a single integer >= 1")
+  }
+  # Chains are spaced n_traits apart so that no two share a WALNUTS stream:
+  # within a chain, bank k is seeded seed + k - 1 (see irt_item_sampler() in the
+  # chain worker), so a stride of n_traits is exactly enough to keep the
+  # per-bank blocks disjoint. At one trait this is the obvious seed, seed + 1.
+  if (is.null(seeds)) {
+    seeds <- as.integer(seed) + (seq_len(n_chains) - 1L) * n_traits
+  } else {
+    seeds <- as.integer(seeds)
+    if (length(seeds) != n_chains) {
+      stop("'seeds' must have length 'n_chains' = ", n_chains)
+    }
+    if (anyNA(seeds) || anyDuplicated(seeds) > 0L) {
+      stop("'seeds' must be distinct and non-missing")
+    }
+  }
+
+  # Everything below this point is per-chain, and every argument it reads has
+  # been validated and normalized above -- the same wrapper/engine split
+  # R/engine.R uses over the compiled sampler.
+  spec <- list(
+    banks = banks,
+    y = y,
+    z = z,
+    n_burnin = n_burnin,
+    n_sampling = n_sampling,
+    theta_sd = theta_sd,
+    theta_accept_target = theta_accept_target,
+    warmup_start = warmup_start,
+    beta_sd = beta_sd,
+    step_size = step_size,
+    n_theta_cutpoints = n_theta_cutpoints,
+    n_trees = n_trees,
+    n_threads = n_threads,
+    keep_theta = keep_theta,
+    verbose = verbose,
+    n_traits = n_traits,
+    n_persons = n_persons,
+    n_items = n_items,
+    theta_names = theta_names
+  )
+
+  if (n_chains == 1L) {
+    return(do.call(irt_causal_bart_chain, c(spec, list(seed = seeds[1L]))))
+  }
+
+  structure(
+    list(
+      chains = run_chains(spec, seeds, n_cores),
+      seeds = seeds,
+      n_chains = n_chains,
+      n_sampling = n_sampling,
+      n_traits = n_traits,
+      call = match.call()
+    ),
+    class = "irt_causal_chains"
+  )
+}
+
+# One chain. Assumes validated, normalized inputs; irt_causal_bart() is the only
+# caller. `seed` fully determines this chain -- set.seed() below governs R's RNG
+# (and so dbarts, which defaults to it) and `seed` is handed to each WALNUTS
+# sampler's own RNG. That is what lets chains run in separate processes with no
+# stream brokering at all.
+irt_causal_bart_chain <- function(
+  banks,
+  y,
+  z,
+  n_burnin,
+  n_sampling,
+  theta_sd,
+  theta_accept_target,
+  warmup_start,
+  beta_sd,
+  step_size,
+  n_theta_cutpoints,
+  n_trees,
+  n_threads,
+  keep_theta,
+  verbose,
+  n_traits,
+  n_persons,
+  n_items,
+  theta_names,
+  seed,
+  chain_id = NULL
+) {
   set.seed(seed)
   theta <- matrix(rnorm(n_persons * n_traits), n_persons, n_traits)
 
@@ -418,7 +537,8 @@ irt_causal_bart <- function(
 
     if (verbose && (i_sample %% 100L == 0L || i_sample == n_total)) {
       message(sprintf(
-        "scan %d/%d (%s), theta accept %.2f",
+        "%sscan %d/%d (%s), theta accept %.2f",
+        if (is.null(chain_id)) "" else sprintf("chain %d: ", chain_id),
         i_sample,
         n_total,
         if (sampling_phase) "sampling" else "burn-in",

@@ -21,6 +21,15 @@
   previous draws. Only disjoint banks (each item loading on one trait) are
   supported.
 
+* `irt_causal_bart()` runs several chains via `n_chains`, optionally in
+  parallel via `n_cores`. A chain's seed determines it completely, so `n_cores`
+  changes only the wall clock, never the draws; it is fork-based, and so a no-op
+  on Windows. `irt_rhat()` reports rank-normalized split R-hat --- the
+  between-chain diagnostic a single chain cannot give, and the one that exposes
+  the sign and label multimodality IRT invites --- and `irt_chain_draws()` pools
+  draws across chains. `n_chains = 1` keeps the previous return shape and the
+  previous draws.
+
 * `simulate_irt_causal()` generates data from the fitted model, with `n_traits`
   banks and a per-trait `prognostic` coefficient.
 
