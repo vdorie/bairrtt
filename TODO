@@ -17,12 +17,6 @@ items
     per-draw reducing-callback shape stan4bart has scoped for the same
     problem (stan4bart TODO "callback-estimators"). consumer-gated.
 
-  multi-trait: generalize from one latent trait to K. This is the live
-    item - a colleague's two-trait Stan model is the motivating case.
-    Design and scoping in docs/design/multi-trait.md; plan in
-    docs/plans/multi-trait.md. Expected to need no C++ and no dbarts
-    change.
-
   multiple-chains: the sampler runs a single chain, so there is no
     between-chain diagnostic - no R-hat, no way to catch the label/sign
     multimodality that IRT models invite. The blocker is that each chain
@@ -32,11 +26,14 @@ items
 
   theta-block-move: dbarts::updatePredictorPerObservationJointly() takes
     a SINGLE shared column by design (it errors on more; see the
-    function's own guard). With K traits the current design must scan
-    component-wise - update trait k for all persons, then trait k+1 -
-    which is a valid Metropolis-within-Gibbs systematic scan but cannot
-    move a person's whole trait vector as a unit. A genuine block move
-    needs multi-column support in dbarts. Do not open this until
-    multi-trait has landed and component-wise mixing has been measured;
-    it is a dbarts change requested by a consumer that does not yet
-    exist. consumer-gated.
+    function's own guard). multi-trait therefore landed with a
+    component-wise systematic scan - update trait k for all persons,
+    then trait k+1 - which is a valid Metropolis-within-Gibbs sweep but
+    cannot move a person's whole trait vector as a unit. A genuine block
+    move needs multi-column support in dbarts. Mixing at K = 2 does not
+    yet motivate it: on the motivating DGP (1000 persons, 100 items per
+    bank) the scan holds ~0.44 acceptance and recovers both banks at
+    cor(theta) 0.975, so there is no measured cost to pay dbarts for.
+    Revisit if K grows or the traits are ever given a correlated prior,
+    where component-wise moves would fight the correlation.
+    consumer-gated.

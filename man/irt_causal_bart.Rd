@@ -24,8 +24,10 @@ irt_causal_bart(
 )
 }
 \arguments{
-\item{responses}{A \code{n_persons} x \code{n_items} matrix (or data frame) of 0/1 item
-responses.}
+\item{responses}{Either a \code{n_persons} x \code{n_items} matrix (or data frame) of
+0/1 item responses --- the single-trait case --- or a list of such matrices,
+one item bank per latent trait. Every item loads on exactly one trait; banks
+may differ in item count but must cover the same persons in the same order.}
 
 \item{y}{Numeric outcome, length \code{n_persons}.}
 
@@ -37,22 +39,23 @@ adapted and empty-leaf \code{theta} moves are collapsed rather than rejected.}
 \item{n_sampling}{Number of kept scans.}
 
 \item{theta_sd}{Initial standard deviation of the per-person \code{theta} proposal;
-adapted toward \code{theta_accept_target} during burn-in and frozen afterward.}
+adapted toward \code{theta_accept_target} during burn-in and frozen afterward.
+One shared value across traits.}
 
 \item{theta_accept_target}{Target per-person acceptance rate for the \code{theta}
 proposal adaptation.}
 
-\item{warmup_start}{Burn-in scan after which the WALNUTS item sampler begins
-adapting (before this it is held at its initial \verb{(alpha, beta)} so the
+\item{warmup_start}{Burn-in scan after which the WALNUTS item samplers begin
+adapting (before this they are held at their initial \verb{(alpha, beta)} so the
 tuning is not polluted by the not-yet-settled \code{theta}). Must be less than
-\code{n_burnin}, otherwise the item sampler would never adapt; if it is not, it
+\code{n_burnin}, otherwise the item samplers would never adapt; if it is not, it
 is reduced to \code{n_burnin \%/\% 2} with a warning.}
 
 \item{beta_sd}{Prior standard deviation for the IRT item difficulties.}
 
 \item{step_size}{Initial WALNUTS leapfrog step size.}
 
-\item{n_theta_cutpoints}{Number of cut points for the \code{theta} predictor in
+\item{n_theta_cutpoints}{Number of cut points for each trait predictor in
 each BART model (interior quantiles of a standard normal).}
 
 \item{n_trees}{Number of trees in each BART surface.}
@@ -61,12 +64,12 @@ each BART model (interior quantiles of a standard normal).}
 
 \item{seed}{Integer seed. This calls \code{\link[=set.seed]{set.seed()}} internally, so it
 overwrites the global RNG state (\code{.Random.seed}) as a side effect; it also
-seeds the WALNUTS sampler's own (independent) RNG. \code{y}, \code{z}, and
-\code{responses} may be numeric or logical, but not factors; \code{y} must not
-contain \code{NA}.}
+seeds each WALNUTS sampler's own (independent) RNG, bank \code{k} getting
+\code{seed + k - 1}. \code{y}, \code{z}, and \code{responses} may be numeric or logical, but not
+factors; \code{y} must not contain \code{NA}.}
 
-\item{keep_theta}{If \code{TRUE}, also return the per-scan \code{theta} draws (a
-\code{n_sampling} x \code{n_persons} matrix). Off by default to keep the result small.}
+\item{keep_theta}{If \code{TRUE}, also return the per-scan \code{theta} draws. Off by
+default to keep the result small.}
 
 \item{verbose}{If \code{TRUE}, print progress periodically.}
 }
@@ -75,36 +78,42 @@ A list of draws and diagnostics:
 \describe{
 \item{\code{ate}}{Length-\code{n_sampling} vector of treatment-effect draws.}
 \item{\code{alpha}, \code{beta}}{\code{n_sampling} x \code{n_items} matrices of item-parameter
-draws.}
+draws; with more than one trait, a list of one such matrix per bank.}
 \item{\code{sigma}}{Length-\code{n_sampling} vector of response residual SD draws.}
-\item{\code{theta}}{\code{n_sampling} x \code{n_persons} matrix of \code{theta} draws, if
+\item{\code{theta}}{\code{n_sampling} x \code{n_persons} matrix of \code{theta} draws (a list
+of one such matrix per trait when there is more than one), if
 \code{keep_theta = TRUE}.}
-\item{\code{theta_accept}}{Per-scan \code{theta} acceptance rate (length
-\code{n_burnin + n_sampling}).}
+\item{\code{theta_accept}}{Per-scan \code{theta} acceptance rate, averaged over
+traits (length \code{n_burnin + n_sampling}).}
 \item{\code{theta_sd}}{Final (frozen) proposal SD.}
 \item{\code{theta_sd_trace}}{Per-scan adapted proposal SD.}
-\item{\code{tuning}}{Final WALNUTS tuning (see \code{\link[=irt_tuning]{irt_tuning()}}).}
+\item{\code{tuning}}{Final WALNUTS tuning (see \code{\link[=irt_tuning]{irt_tuning()}}); with more than
+one trait, a list of one per bank.}
 }
 }
 \description{
-Runs a Gibbs sampler for a causal model in which a latent person trait
-\code{theta}, measured by a two-parameter logistic (2PL) item-response model,
-confounds a binary treatment \code{z} and a continuous outcome \code{y}. Within each
-scan:
+Runs a Gibbs sampler for a causal model in which one or more latent person
+traits \code{theta}, each measured by its own two-parameter logistic (2PL)
+item-response model, confound a binary treatment \code{z} and a continuous outcome
+\code{y}. Within each scan:
 }
 \details{
 \itemize{
-\item \code{theta} gets one per-person random-walk Metropolis move (the \code{theta_j} are
-conditionally independent given the trees and item parameters, so each
-person is accepted or rejected on its own). The accepted values are then
-installed into both BART models by a single joint per-observation sweep
+\item Each trait gets one per-person random-walk Metropolis move (the \code{theta_j}
+are conditionally independent given the trees and item parameters, so each
+person is accepted or rejected on its own). The traits are visited in a
+systematic scan --- trait \code{k} is proposed and installed for every person
+before trait \code{k + 1} is touched. The accepted values are installed into both
+BART models by a joint per-observation sweep
 (\code{\link[dbarts:updatePredictorPerObservationJointly]{dbarts::updatePredictorPerObservationJointly()}}): a person is kept only
 if its \code{theta} leaves every leaf non-empty in every tree of both models.
 \item The two BART surfaces --- \code{y ~ f(z, theta)} (response) and
 \code{z ~ f(theta)} (probit assignment) --- each take one tree-update step.
-\item The IRT item parameters \verb{(alpha, beta)} are drawn conditional on \code{theta}
-by the WALNUTS sampler (\code{\link[=irt_item_sampler]{irt_item_sampler()}}): adapting during burn-in,
-then frozen for the sampling phase.
+\item The IRT item parameters \verb{(alpha, beta)} of each bank are drawn conditional
+on that bank's trait by the WALNUTS sampler (\code{\link[=irt_item_sampler]{irt_item_sampler()}}):
+adapting during burn-in, then frozen for the sampling phase. Conditional on
+the traits the banks are independent, so this is one sampler per bank, not
+one larger one.
 }
 
 The treatment-effect estimand \code{E[f(1, theta) - f(0, theta)]} is accumulated
@@ -116,6 +125,16 @@ fit <- irt_causal_bart(sim$responses, sim$y, sim$z,
                        n_burnin = 100, n_sampling = 200, seed = 1)
 mean(fit$ate)                      # posterior mean treatment effect (~ -0.2)
 quantile(fit$ate, c(0.025, 0.975)) # 95\% interval
+
+# two latent traits, two item banks: pass a list of response matrices
+sim2 <- simulate_irt_causal(
+  n_persons = 200, n_items = c(20, 30), n_traits = 2,
+  ate = -0.2, prognostic = c(1.2, 0.8), seed = 1
+)
+fit2 <- irt_causal_bart(sim2$responses, sim2$y, sim2$z,
+                        n_burnin = 100, n_sampling = 200, seed = 1)
+mean(fit2$ate)
+length(fit2$alpha)                 # one item-parameter matrix per bank
 
 }
 \seealso{

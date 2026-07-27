@@ -7,48 +7,72 @@
 simulate_irt_causal(
   n_persons = 1000L,
   n_items = 100L,
+  n_traits = 1L,
   ate = -0.2,
   prognostic = 1,
   seed = NULL
 )
 }
 \arguments{
-\item{n_persons}{Number of persons (rows of the response matrix).}
+\item{n_persons}{Number of persons (rows of each response matrix).}
 
-\item{n_items}{Number of items (columns).}
+\item{n_items}{Number of items per trait (columns). Length 1 (the same count
+for every trait) or \code{n_traits}.}
+
+\item{n_traits}{Number of latent traits \code{K}. At \code{K = 1} (the default) the
+return value is the single-trait one described below.}
 
 \item{ate}{True (constant) treatment effect.}
 
-\item{prognostic}{Coefficient of \code{theta} in the outcome model.}
+\item{prognostic}{Coefficient of each trait in the outcome model. Length 1
+(recycled) or \code{n_traits}.}
 
 \item{seed}{Optional integer seed; if supplied, set before drawing.}
 }
 \value{
-A list with the observed data --- \code{responses} (\code{n_persons} x
-\code{n_items} 0/1 matrix), \code{y}, \code{z} --- and the ground truth: \code{theta}, item
-discriminations \code{alpha}, item difficulties \code{beta}, and \code{ate}.
+A list with the observed data --- \code{responses}, \code{y}, \code{z} --- and the
+ground truth: \code{theta}, item discriminations \code{alpha}, item difficulties
+\code{beta}, \code{prognostic}, and \code{ate}. At \code{n_traits = 1}, \code{responses} is an
+\code{n_persons} x \code{n_items} 0/1 matrix, \code{theta} a length-\code{n_persons} vector,
+and \code{alpha}/\code{beta} length-\code{n_items} vectors. At \code{n_traits > 1}, \code{responses}
+is a length-\code{K} list of response matrices, \code{theta} an \code{n_persons} x \code{K}
+matrix, and \code{alpha}/\code{beta} length-\code{K} lists of vectors --- exactly the
+shapes \code{\link[=irt_causal_bart]{irt_causal_bart()}} takes and returns.
 }
 \description{
 Draws a data set from the model that \code{\link[=irt_causal_bart]{irt_causal_bart()}} fits: person
 abilities \code{theta ~ N(0, 1)}, 2PL item responses with difficulties
 \code{b ~ N(0, 1)} and discriminations \code{a ~ N(1, 0.2)}, treatment assignment
-\code{z ~ Bernoulli(plogis(theta))} (so \code{theta} confounds), and a continuous
-outcome with a constant treatment effect,
-\code{y = prognostic * theta + ate * z + N(0, 1)}.
+\verb{z ~ Bernoulli(plogis(sum_k theta_k))} (so the traits confound), and a
+continuous outcome with a constant treatment effect,
+\verb{y = sum_k prognostic_k * theta_k + ate * z + N(0, 1)}.
 }
 \details{
+With \code{n_traits > 1} each trait gets its own item bank; every item loads on
+exactly one trait (the disjoint-bank case, which is the identified one --- see
+"Identification" in \code{docs/design/multi-trait.md}). The banks are drawn
+independently and the traits are independent \code{N(0, 1)}.
+
 Two deliberate mismatches with the model \code{\link[=irt_causal_bart]{irt_causal_bart()}} fits (they are
-benign, not bugs): the assignment here uses a \strong{logit} link
-(\code{plogis(theta)}) while the fitted assignment BART uses a probit link --- BART
-is flexible enough to absorb the shape difference, and the assignment model is
-only a balancing nuisance term; and discriminations are drawn \code{N(1, 0.2)},
-which can technically be negative (negligibly so at the default \code{sd}), whereas
-the fitted model places a strictly positive \code{Exp(1)} prior on discrimination.
-Keep the discrimination \code{sd} small so reverse-keyed items do not appear.
+benign, not bugs): the assignment here uses a \strong{logit} link while the fitted
+assignment BART uses a probit link --- BART is flexible enough to absorb the
+shape difference, and the assignment model is only a balancing nuisance term;
+and discriminations are drawn \code{N(1, 0.2)}, which can technically be negative
+(negligibly so at the default \code{sd}), whereas the fitted model places a
+strictly positive \code{Exp(1)} prior on discrimination. Keep the discrimination
+\code{sd} small so reverse-keyed items do not appear.
 }
 \examples{
 sim <- simulate_irt_causal(n_persons = 200, n_items = 30, ate = -0.2, seed = 1)
 dim(sim$responses)
 sim$ate
+
+# two traits, two item banks
+sim2 <- simulate_irt_causal(
+  n_persons = 200, n_items = c(20, 30), n_traits = 2,
+  ate = -0.2, prognostic = c(1.2, 0.8), seed = 1
+)
+sapply(sim2$responses, dim)
+dim(sim2$theta)
 
 }

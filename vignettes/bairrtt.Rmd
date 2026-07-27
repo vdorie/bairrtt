@@ -124,6 +124,52 @@ fit$theta_sd                        # frozen proposal SD
 fit$tuning$frozen                   # WALNUTS frozen?
 ```
 
+## More than one latent trait
+
+Several traits can confound the same treatment and outcome, each measured by its
+own item bank. Pass `responses` as a *list* of response matrices, one per trait;
+every item loads on exactly one trait, and the banks may differ in item count so
+long as they cover the same persons in the same order. Conditional on the traits
+the banks factorize exactly, so each gets its own WALNUTS sampler.
+
+The traits are visited in a systematic scan --- trait `k` is proposed and
+installed for every person before trait `k + 1` --- because the joint install
+into both BART models takes one shared column at a time. That is an ordinary
+Metropolis-within-Gibbs sweep; what it does not do is move a person's whole
+trait vector as a single accept/reject unit.
+
+```{r simulate2}
+sim2 <- simulate_irt_causal(
+  n_persons = 300, n_items = c(30, 40), n_traits = 2,
+  ate = -0.2, prognostic = c(1.2, 0.8), seed = 42
+)
+dim(sim2$theta)                       # one column per trait
+sapply(sim2$responses, dim)           # 300 x 30 and 300 x 40
+
+fit2 <- irt_causal_bart(
+  sim2$responses, sim2$y, sim2$z,
+  n_burnin = 100, n_sampling = 250, seed = 42
+)
+```
+
+The estimand is unchanged in form --- `E[f(1, theta) - f(0, theta)]`, now
+conditioning on the whole trait matrix. The per-bank quantities come back as
+lists, one entry per trait; everything else keeps its single-trait shape.
+
+```{r ate2}
+c(mean = mean(fit2$ate),
+  lower = quantile(fit2$ate, 0.025, names = FALSE),
+  upper = quantile(fit2$ate, 0.975, names = FALSE))
+
+# item difficulties still track the truth within each bank
+vapply(1:2, function(k) cor(colMeans(fit2$beta[[k]]), sim2$beta[[k]]),
+       numeric(1))
+```
+
+Only the disjoint-bank case is supported. Genuine multidimensional IRT, where
+one item loads on several traits, is identified only up to a rotation of the
+loadings and needs a constraint that this interface does not express.
+
 ## Reusing the WALNUTS item sampler
 
 The item-parameter sampler is also exported on its own, for use inside other

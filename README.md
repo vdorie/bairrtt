@@ -56,6 +56,29 @@ quantile(fit$ate, c(0.025, 0.975))  # 95% credible interval
 See `vignette("bairrtt")` for a walk-through, including recovery of the item
 parameters and the WALNUTS item sampler on its own.
 
+## Several latent traits
+
+More than one trait can confound the same treatment and outcome, each measured
+by its own item bank. Pass `responses` as a list of response matrices; every
+item loads on exactly one trait, and the banks may differ in item count so long
+as they cover the same persons in the same order. The per-bank quantities
+(`alpha`, `beta`, and `theta`) come back as lists.
+
+```r
+sim <- simulate_irt_causal(n_persons = 500, n_items = c(60, 40), n_traits = 2,
+                           ate = -0.2, prognostic = c(1.2, 0.8), seed = 1)
+
+fit <- irt_causal_bart(sim$responses, sim$y, sim$z,
+                       n_burnin = 150, n_sampling = 400, seed = 1)
+
+mean(fit$ate)
+cor(colMeans(fit$beta[[1]]), sim$beta[[1]])   # per-bank item recovery
+```
+
+Only disjoint banks are supported. Genuine multidimensional IRT, where one item
+loads on several traits, is identified only up to a rotation of the loadings and
+needs a constraint this interface does not express.
+
 ## The WALNUTS item sampler
 
 The item-parameter sampler is exported for reuse in other models. Hold `theta`

@@ -42,9 +42,9 @@ behavior and its current draws. No C++ change; no dbarts change.
    column.
 3. Create K `irt_item_sampler` objects, one per bank. Run the
    warmup/freeze/draw lifecycle on each, per scan, in bank order.
-4. Generalize the Metropolis ratio: propose all K traits for a person at once,
-   sum the K bank log-likelihoods and the K `dnorm(theta_k, log = TRUE)` prior
-   terms, and add the two BART terms once.
+4. Generalize the Metropolis ratio: one move per trait, in a systematic scan.
+   Trait `k`'s ratio uses bank `k`'s log-likelihood, `dnorm(theta_k)`, and the
+   two BART terms read at the current value of every other trait.
 5. Install component-wise: loop k, calling
    `dbarts::updatePredictorPerObservationJointly(list(response_model,
    assignment_model), theta[, k], paste0("theta", k))` and reverting the
@@ -70,3 +70,37 @@ behavior and its current draws. No C++ change; no dbarts change.
   so the whole suite stays under a few seconds.
 - Sanity check against the colleague's model: `scratch/FINAL_multi_latent.R`
   simulates two traits at ate 0.2; the fitted interval should cover it.
+
+## Status
+
+LANDED 2026-07-27. ~330 lines of R, no C++, no dbarts change, as scoped.
+
+Step 4 was written as a block proposal - all K traits for a person accepted or
+rejected together - which the Constraints section of this same file puts out of
+scope, and which "The one real constraint" in the design doc and the
+`theta-block-move` TODO both rule out. Implemented as the systematic scan those
+three agree on: trait `k` is proposed, accepted, and installed for every person
+before trait `k + 1` is touched, and the "current" BART terms are re-read
+between traits so each move conditions on the accepted values of the ones before
+it. The re-read is skipped for the last trait, so K = 1 does no extra work.
+
+Verification:
+  - K = 1 regression: bitwise identical. Every element of the fit
+    (`ate`, `alpha`, `beta`, `sigma`, `theta`, `theta_accept`, `theta_sd`,
+    `theta_sd_trace`, `tuning`) `identical()` to the pre-change build on
+    `simulate_irt_causal(200, 30, ate = -0.2, seed = 1)`, `seed = 1`, and so is
+    the simulated data itself.
+  - tinytest 86/86 (46 existing + 40 new in `test-multi-trait.R`), 3.3s.
+  - K = 2 recovery, 400 persons / banks of 30 and 40, true ate 0.2: posterior
+    mean 0.378, 95% interval [0.068, 0.640], covers. Per-bank cor(beta) 0.987
+    and 0.982, cor(theta) 0.937 and 0.947.
+  - Colleague's DGP (`scratch/FINAL_multi_latent.R`, 1000 persons, 100 items per
+    bank, probit propensity in both traits, true gamma_z 0.2): posterior mean
+    0.106, 95% interval [-0.064, 0.289], covers. Per-bank cor(beta) 0.969 and
+    0.987, cor(alpha) 0.937 and 0.959, cor(theta) 0.975 both. 157s for
+    500 + 1000 scans. This is the measurement `theta-block-move` was waiting on;
+    component-wise mixing holds ~0.44 acceptance and costs nothing visible.
+
+Left as scoped-out: same-item multidimensional IRT, correlated trait priors, and
+a per-trait `theta_sd` (the proposal SD is still one shared, adapted scalar).
+

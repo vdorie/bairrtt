@@ -1,6 +1,10 @@
 # Multiple latent traits
 
-Status: PROPOSED 2026-07-27. Motivating case in hand, no code written.
+Status: LANDED 2026-07-27, as proposed. Landing notes and the verification
+numbers are in `docs/plans/multi-trait.md`, "Status"; the one deviation from the
+plan (its step 4 read as a block proposal, which this doc's "The one real
+constraint" rules out) is recorded there. Everything below held: the item blocks
+factorized, the change was pure R, and dbarts was not touched.
 
 ## Problem
 

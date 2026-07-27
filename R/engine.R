@@ -31,28 +31,45 @@
 #'
 #' @seealso [irt_warmup()], [irt_freeze()], [irt_draw()], [irt_tuning()]
 #' @export
-irt_item_sampler <- function(responses, alpha, beta, beta_sd = 10,
-                             step_size = 0.1, seed = 1L) {
+irt_item_sampler <- function(
+  responses,
+  alpha,
+  beta,
+  beta_sd = 10,
+  step_size = 0.1,
+  seed = 1L
+) {
   responses <- as_response_matrix(responses)
   n_items <- ncol(responses)
   alpha <- as.double(alpha)
   beta <- as.double(beta)
-  if (length(alpha) != n_items)
+  if (length(alpha) != n_items) {
     stop("'alpha' must have length ncol(responses) = ", n_items)
-  if (length(beta) != n_items)
+  }
+  if (length(beta) != n_items) {
     stop("'beta' must have length ncol(responses) = ", n_items)
-  if (anyNA(alpha) || any(alpha <= 0))
+  }
+  if (anyNA(alpha) || any(alpha <= 0)) {
     stop("'alpha' must be positive and non-missing")
-  if (anyNA(beta))
+  }
+  if (anyNA(beta)) {
     stop("'beta' must be non-missing")
-  if (!is.numeric(beta_sd) || length(beta_sd) != 1L || beta_sd <= 0)
+  }
+  if (!is.numeric(beta_sd) || length(beta_sd) != 1L || beta_sd <= 0) {
     stop("'beta_sd' must be a single positive number")
-  if (!is.numeric(step_size) || length(step_size) != 1L || step_size <= 0)
+  }
+  if (!is.numeric(step_size) || length(step_size) != 1L || step_size <= 0) {
     stop("'step_size' must be a single positive number")
+  }
 
-  ptr <- .irt_create_sampler(responses, alpha, beta,
-                             as.double(beta_sd), as.double(step_size),
-                             as.integer(seed))
+  ptr <- .irt_create_sampler(
+    responses,
+    alpha,
+    beta,
+    as.double(beta_sd),
+    as.double(step_size),
+    as.integer(seed)
+  )
   structure(
     list(ptr = ptr, n_persons = nrow(responses), n_items = n_items),
     class = "irt_item_sampler"
@@ -139,20 +156,27 @@ irt_item_logdensity <- function(par, responses, theta, beta_sd = 10) {
   responses <- as_response_matrix(responses)
   par <- as.double(par)
   theta <- as.double(theta)
-  if (length(par) != 2L * ncol(responses))
+  if (length(par) != 2L * ncol(responses)) {
     stop("'par' must have length 2 * ncol(responses)")
-  if (length(theta) != nrow(responses))
+  }
+  if (length(theta) != nrow(responses)) {
     stop("'theta' must have length nrow(responses)")
+  }
   .irt_logdensity_grad(par, responses, theta, as.double(beta_sd))
 }
 
 #' @export
 print.irt_item_sampler <- function(x, ...) {
-  frozen <- tryCatch(isTRUE(.irt_sampler_tuning(x$ptr)$frozen),
-                     error = function(e) NA)
-  cat(sprintf("<irt_item_sampler: %d persons x %d items, %s>\n",
-              x$n_persons, x$n_items,
-              if (isTRUE(frozen)) "frozen (sampling)" else "adapting (warm-up)"))
+  frozen <- tryCatch(
+    isTRUE(.irt_sampler_tuning(x$ptr)$frozen),
+    error = function(e) NA
+  )
+  cat(sprintf(
+    "<irt_item_sampler: %d persons x %d items, %s>\n",
+    x$n_persons,
+    x$n_items,
+    if (isTRUE(frozen)) "frozen (sampling)" else "adapting (warm-up)"
+  ))
   invisible(x)
 }
 
@@ -160,25 +184,64 @@ print.irt_item_sampler <- function(x, ...) {
 
 # Coerce to a plain double 0/1 matrix (Eigen::Map<MatrixXd> needs double).
 as_response_matrix <- function(responses) {
-  if (is.data.frame(responses)) responses <- as.matrix(responses)
-  if (!is.matrix(responses)) stop("'responses' must be a matrix or data frame")
-  if (!is.numeric(responses)) stop("'responses' must be numeric (0/1)")
+  if (is.data.frame(responses)) {
+    responses <- as.matrix(responses)
+  }
+  if (!is.matrix(responses)) {
+    stop("'responses' must be a matrix or data frame")
+  }
+  if (!is.numeric(responses)) {
+    stop("'responses' must be numeric (0/1)")
+  }
   storage.mode(responses) <- "double"
   bad <- responses != 0 & responses != 1
-  if (anyNA(responses) || any(bad))
+  if (anyNA(responses) || any(bad)) {
     stop("'responses' must contain only 0 and 1")
+  }
   responses
 }
 
+# One item bank per latent trait. A bare matrix (or data frame) is the
+# single-trait case; a list of them gives one bank per trait. Item counts may
+# differ between banks, but every bank must cover the same persons in the same
+# order -- row j is person j throughout.
+as_response_banks <- function(responses) {
+  if (!is.list(responses) || is.data.frame(responses)) {
+    return(list(as_response_matrix(responses)))
+  }
+  if (length(responses) == 0L) {
+    stop("'responses' must contain at least one item bank")
+  }
+  banks <- lapply(responses, as_response_matrix)
+  n_persons <- vapply(banks, nrow, integer(1L))
+  if (any(n_persons != n_persons[1L])) {
+    stop(
+      "all item banks in 'responses' must have the same number of rows ",
+      "(persons); got ",
+      paste(n_persons, collapse = ", ")
+    )
+  }
+  banks
+}
+
+# The trait columns as a data frame, for dbarts()'s and predict()'s interfaces.
+trait_frame <- function(theta, theta_names) {
+  out <- as.data.frame(theta)
+  names(out) <- theta_names
+  out
+}
+
 check_sampler <- function(sampler) {
-  if (!inherits(sampler, "irt_item_sampler"))
+  if (!inherits(sampler, "irt_item_sampler")) {
     stop("'sampler' must be an 'irt_item_sampler' (see irt_item_sampler())")
+  }
 }
 
 .irt_draw_dispatch <- function(sampler, theta, fn) {
   check_sampler(sampler)
   theta <- as.double(theta)
-  if (length(theta) != sampler$n_persons)
+  if (length(theta) != sampler$n_persons) {
     stop("'theta' must have length n_persons = ", sampler$n_persons)
+  }
   fn(sampler$ptr, theta)
 }
