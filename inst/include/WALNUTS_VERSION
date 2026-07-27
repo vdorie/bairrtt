@@ -1,0 +1,41 @@
+WALNUTS (vendored)
+==================
+
+Upstream:  https://github.com/flatironinstitute/walnuts
+Commit:    5854be888e5432a103275466d7d0be95c7c5c67a
+Date:      2026-07-13 (upstream commit date)
+Vendored:  2026-07-27
+License:   MIT, (c) 2025 Bob Carpenter (see WALNUTS_LICENSE)
+
+Layout mirrors upstream include/: the per-component headers live in
+walnuts/, with walnuts.hpp the umbrella that includes them all. These
+are pristine upstream copies - do not edit them; changes belong
+upstream, and local needs go in bairrtt_types.h.
+
+Previous snapshot was a10d5603939159b1eeb3fb431ea816c2e1010644
+(2026-06-12), the initial import. Five headers changed (adapt, api,
+config, sampler, util); the rest are byte-identical.
+
+API drift vs that snapshot, and why none of it reaches bairrtt:
+  - adapt.hpp / sampler.hpp / api.hpp: upstream unified the threaded
+    adaptation and sampling drivers - AdaptWorker and ChainWorker lost
+    ctor arguments, both controller_loop()s now take the config object
+    instead of loose tolerances, and detail::sample() was resigned to
+    take SamplingConfig directly. All of it is the MULTI-CHAIN driver
+    (detail::adapt, detail::sample, walnuts::sample). bairrtt drives
+    AdaptiveWalnuts one chain at a time from src/irt_hmc.cpp and never
+    enters that path. The detail::Buffer alias adapt.hpp used to export
+    is gone; bairrtt never named it.
+  - util.hpp / config.hpp: new detail::leapfrog_error() and
+    detail::adapt_step(), plus InitConfigBuilder::adapt_step_build(),
+    a heuristic initial-step-size search. Purely additive. bairrtt
+    still passes its own step_size through InitChainConfig; adopting
+    the heuristic would mean calling adapt_step() in create_sampler(),
+    which is a separate decision (the target there is conditional on a
+    theta that has not been sampled yet).
+  - The AdaptiveWalnuts -> sampler() -> WalnutsSampler lifecycle, the
+    diagonal MassEstimator, the InitChainConfig(step_size, position,
+    mass) ctor, and the ChainHandler callback set (on_sample /
+    on_warmup / on_warmup_complete) are all UNCHANGED.
+
+Same commit is vendored in stan4bart (inst/include/WALNUTS_VERSION).
