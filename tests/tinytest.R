@@ -1,2 +1,3 @@
-if (requireNamespace("tinytest", quietly = TRUE))
+if (requireNamespace("tinytest", quietly = TRUE)) {
   tinytest::test_package("bairrtt")
+}

@@ -18,3 +18,16 @@ src/*.rds
 
 # user
 *.swp
+*~
+
+# local, uncommitted project notes (CLAUDE.local.md and friends)
+*.local*
+
+# Claude Code local project directory and scratch space
+.claude/
+scratch
+
+# clangd: machine-specific paths / local index (regenerate per machine)
+.clangd
+compile_commands.json
+.cache/

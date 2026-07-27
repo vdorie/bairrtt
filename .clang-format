@@ -1,0 +1,22 @@
+# C++ formatting, matched to the sibling dbarts/stan4bart house style rather
+# than LLVM's defaults. ColumnLimit: 80 wraps both code and comments
+# (clang-format uses one limit for both).
+#
+# NOTE: inst/include/walnuts/ is vendored upstream code (MIT). Do not format it
+# -- run clang-format on src/ and inst/include/bairrtt_types.h only.
+BasedOnStyle: LLVM
+IndentWidth: 2
+ColumnLimit: 80
+PointerAlignment: Left          # IrtSampler* s  (not  IrtSampler *s)
+NamespaceIndentation: All
+IndentPPDirectives: AfterHash   # `#  define` inside nested #if blocks
+SortUsingDeclarations: Never    # keep the author's using-declaration order
+
+# When a prototype/call is too long, break after '(', put one argument per
+# line, and place the closing ')' on its own line.
+AlignAfterOpenBracket: BlockIndent
+BinPackParameters: false
+BinPackArguments: false
+AllowAllParametersOfDeclarationOnNextLine: false
+AllowAllArgumentsOnNextLine: false
+ContinuationIndentWidth: 2

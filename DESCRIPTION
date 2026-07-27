@@ -22,7 +22,7 @@ Encoding: UTF-8
 Depends: R (>= 4.3.0)
 Imports:
     Rcpp,
-    dbarts (>= 0.9.34),
+    dbarts (>= 1.0.0),
     stats
 LinkingTo: Rcpp, RcppEigen
 Suggests:

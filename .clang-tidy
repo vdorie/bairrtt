@@ -1,0 +1,13 @@
+# Starter static-analysis set. clang-tidy needs a compile_commands.json to know
+# how each file is built; generate one with:
+#   brew install bear
+#   bear -- R CMD INSTALL --preclean .
+# HeaderFilterRegex deliberately excludes inst/include/walnuts (vendored
+# upstream, MIT) and R's own headers, leaving only code this package owns.
+Checks: >
+  clang-analyzer-*,
+  bugprone-*,
+  performance-*,
+  -bugprone-easily-swappable-parameters
+WarningsAsErrors: ''
+HeaderFilterRegex: '(src/|inst/include/bairrtt_types\.h)'

@@ -1,0 +1,42 @@
+An unordered, forward-facing backlog: what is still to do, plus the negative
+findings that would otherwise be paid for twice. Completed work is not logged
+here - its history lives in docs/plans/, docs/design/, and git.
+
+Items are listed alphabetically; the order carries no meaning. An item
+graduates to its own docs/plans/<name>.md when it is picked up, and the
+planning/implementation/review process is docs/plans/README.md.
+
+Seeded 2026-07-27 from the state of the initial import; prune freely.
+
+items
+  estimand-surface: irt_causal_bart() returns only the population ATE,
+    accumulated per scan. The per-person f(1, theta) - f(0, theta)
+    surface is already computed and discarded, so CATE/ICATE draws and
+    subgroup estimands are nearly free at the cost of an n x draws
+    matrix. Wants the same opt-in treatment keep_theta gets, or the
+    per-draw reducing-callback shape stan4bart has scoped for the same
+    problem (stan4bart TODO "callback-estimators"). consumer-gated.
+
+  multi-trait: generalize from one latent trait to K. This is the live
+    item - a colleague's two-trait Stan model is the motivating case.
+    Design and scoping in docs/design/multi-trait.md; plan in
+    docs/plans/multi-trait.md. Expected to need no C++ and no dbarts
+    change.
+
+  multiple-chains: the sampler runs a single chain, so there is no
+    between-chain diagnostic - no R-hat, no way to catch the label/sign
+    multimodality that IRT models invite. The blocker is that each chain
+    owns mutable dbarts samplers and an XPtr-held WALNUTS state, so
+    parallel chains mean separate processes, not threads. Cheapest first
+    step is a documented outer loop over seeds plus a combine helper.
+
+  theta-block-move: dbarts::updatePredictorPerObservationJointly() takes
+    a SINGLE shared column by design (it errors on more; see the
+    function's own guard). With K traits the current design must scan
+    component-wise - update trait k for all persons, then trait k+1 -
+    which is a valid Metropolis-within-Gibbs systematic scan but cannot
+    move a person's whole trait vector as a unit. A genuine block move
+    needs multi-column support in dbarts. Do not open this until
+    multi-trait has landed and component-wise mixing has been measured;
+    it is a dbarts change requested by a consumer that does not yet
+    exist. consumer-gated.

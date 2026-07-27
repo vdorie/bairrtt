@@ -1,0 +1,79 @@
+# Workflow derived from https://github.com/r-lib/actions/tree/v2/examples
+on:
+  push:
+    branches: [main, master]
+    # documentation-only pushes cannot change what R CMD check builds and
+    # tests (docs/ and TODO are .Rbuildignore'd)
+    paths-ignore:
+      - 'docs/**'
+      - 'TODO'
+      - '**.md'
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+name: R-CMD-check
+
+permissions: read-all
+
+jobs:
+  R-CMD-check:
+    runs-on: ${{ matrix.config.os }}
+
+    name: ${{ matrix.config.os }} (${{ matrix.config.r }})
+
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - {os: macos-latest,   r: 'release'}
+          - {os: windows-latest, r: 'release'}
+          - {os: ubuntu-latest,  r: 'devel', http-user-agent: 'release'}
+          - {os: ubuntu-latest,  r: 'release'}
+
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+      R_KEEP_PKG_SOURCE: yes
+
+    steps:
+      - name: Configure git
+        run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@v7
+
+      - uses: r-lib/actions/setup-pandoc@v2
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: ${{ matrix.config.r }}
+          http-user-agent: ${{ matrix.config.http-user-agent }}
+          use-public-rspm: true
+
+      # TEMPORARY, until dbarts 1.0-0 reaches CRAN: this package needs
+      # updatePredictorPerObservationJointly(), new in dbarts 1.0-0, which CRAN
+      # does not yet carry -- the dependency resolver below would install the
+      # 0.9-x series instead. Install the release branch first; the resolver
+      # then sees a satisfied dependency and leaves it alone. DELETE this step
+      # when dbarts 1.0-0 is on CRAN (the releases are lockstep, dbarts first).
+      - name: Install dbarts from the release branch
+        shell: Rscript {0}
+        run: |
+          install.packages("remotes", repos = "https://cloud.r-project.org")
+          remotes::install_github("vdorie/dbarts@bartcore", upgrade = "never")
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          # check-r-package below calls rcmdcheck::rcmdcheck; nothing else
+          # installs it, so it has to be named here
+          extra-packages: any::rcmdcheck
+          needs: check
+
+      - uses: r-lib/actions/check-r-package@v2
+        with:
+          upload-snapshots: true
+          build_args: 'c("--no-manual","--no-build-vignettes")'
+          args: 'c("--no-manual","--ignore-vignettes")'

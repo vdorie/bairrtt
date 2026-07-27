@@ -1,0 +1,64 @@
+# Enforces the checked-in .lintr config and the air formatter (air.toml).
+# Both jobs hard-fail on any finding. Workflow derived from
+# https://github.com/r-lib/actions/tree/v2/examples and
+# https://github.com/posit-dev/setup-air
+on:
+  push:
+    branches: [main, master]
+    paths-ignore:
+      - 'docs/**'
+      - 'TODO'
+      - '**.md'
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+name: lint.yaml
+
+permissions: read-all
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      # local::. below builds bairrtt, which needs dbarts 1.0-0 (not yet on
+      # CRAN). Same temporary step as check-standard.yaml; delete both together.
+      - name: Install dbarts from the release branch
+        shell: Rscript {0}
+        run: |
+          install.packages("remotes", repos = "https://cloud.r-project.org")
+          remotes::install_github("vdorie/dbarts@bartcore", upgrade = "never")
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: any::lintr, local::.
+          needs: lint
+
+      - name: Lint
+        run: lintr::lint_package()
+        shell: Rscript {0}
+        env:
+          LINTR_ERROR_ON_LINT: true
+
+  # Independent of the lint job: air needs no R and no dbarts, so it does not
+  # pay for the GitHub-branch install above.
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: posit-dev/setup-air@v1
+
+      - name: Check formatting
+        run: air format --check .

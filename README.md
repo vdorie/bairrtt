@@ -18,12 +18,13 @@ Gibbs loop, exposed as a single entry point.
 
 ## Installation
 
-`bairrtt` needs **dbarts (>= 0.9.34)**, which is newer than the version on
-CRAN. Until that is released, install dbarts from GitHub first:
+`bairrtt` needs **dbarts (>= 1.0-0)**, which is newer than the version on CRAN
+(it uses `updatePredictorPerObservationJointly()`, new in that release). Until
+1.0-0 is on CRAN, install dbarts from its release branch first:
 
 ```r
 # install.packages("remotes")
-remotes::install_github("vdorie/dbarts")   # dbarts >= 0.9.34 (not yet on CRAN)
+remotes::install_github("vdorie/dbarts@bartcore")   # dbarts 1.0-0, not yet on CRAN
 remotes::install_github("vdorie/bairrtt")
 ```
 
