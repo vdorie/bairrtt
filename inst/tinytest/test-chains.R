@@ -1,6 +1,7 @@
 # Multiple chains: the R-hat statistic itself, then the surface over a fit.
 # The statistic is tested on synthetic input rather than on draws -- it has to
-# be right independently of whether any particular fit converged.
+# be right independently of whether any particular fit converged. It is the
+# degrade path used when posterior is not installed.
 
 rhat_matrix <- getFromNamespace("rhat_matrix", "bairrtt")
 
@@ -42,8 +43,6 @@ for (k in 3:5) {
     expect_equal(rhat_matrix(stuck), posterior::rhat(stuck))
   }
 }
-# and it must survive into the reported maximum rather than being dropped
-expect_true(is.infinite(max(c(1.01, Inf, NA), na.rm = TRUE)))
 
 # agreement with the reference implementation, to the last bit
 if (requireNamespace("posterior", quietly = TRUE)) {
@@ -54,7 +53,7 @@ if (requireNamespace("posterior", quietly = TRUE)) {
   }
 }
 
-# --- n_chains = 1 is unchanged ----------------------------------------------
+# --- the chain axis is always present ----------------------------------------
 sim <- simulate_irt_causal(n_persons = 150L, n_items = 12L, seed = 11)
 common <- list(
   sim$responses,
@@ -66,58 +65,72 @@ common <- list(
   seed = 11L
 )
 
-one <- do.call(irt_causal_bart, common)
-expect_false(inherits(one, "irt_causal_chains"))
-expect_equal(length(one$ate), 60L)
-expect_error(irt_rhat(one)) # not a chains object
-expect_error(irt_chain_draws(one, "ate"))
+one <- do.call(irt_causal_bart, c(common, list(n_chains = 1L)))
+expect_inherits(one, "irt_causal_fit")
+expect_equal(dim(one$ate), c(60L, 1L))
+expect_equal(one$n_chains, 1L)
 
-# --- multiple chains ---------------------------------------------------------
 fit <- do.call(irt_causal_bart, c(common, list(n_chains = 3L)))
-expect_inherits(fit, "irt_causal_chains")
+expect_inherits(fit, "irt_causal_fit")
 expect_equal(fit$n_chains, 3L)
 expect_equal(fit$seeds, c(11L, 12L, 13L)) # stride is n_traits = 1
-expect_equal(length(fit$chains), 3L)
+expect_equal(dim(fit$ate), c(60L, 3L))
+expect_equal(dim(fit$alpha), c(60L, 3L, 12L))
+expect_equal(length(fit$theta_sd), 3L)
+expect_equal(length(fit$tuning), 3L)
 
 # chain 1 takes the base seed, so it must reproduce the single-chain fit
-expect_identical(fit$chains[[1L]], one)
+expect_identical(fit$ate[, 1L], one$ate[, 1L])
+expect_identical(fit$alpha[, 1L, ], one$alpha[, 1L, ])
 
 # sequential and forked runs are the same draws
 fit_par <- do.call(
   irt_causal_bart,
   c(common, list(n_chains = 3L, n_cores = 2L))
 )
-expect_identical(fit_par$chains, fit$chains)
+expect_identical(fit_par$ate, fit$ate)
+expect_identical(fit_par$alpha, fit$alpha)
 
-# --- draw extraction ---------------------------------------------------------
-ate <- irt_chain_draws(fit, "ate")
-expect_equal(dim(ate), c(60L, 3L))
-expect_identical(ate[, 2L], fit$chains[[2L]]$ate)
-expect_equal(mean(ate), mean(unlist(lapply(fit$chains, `[[`, "ate"))))
+# --- extract -----------------------------------------------------------------
+ate <- extract(fit, "ate")
+expect_equal(length(ate), 180L) # 60 draws x 3 chains, pooled
+expect_equal(ate[1:60], fit$ate[, 1L])
+expect_equal(dim(extract(fit, "ate", combine_chains = FALSE)), c(60L, 3L))
 
-alpha <- irt_chain_draws(fit, "alpha")
-expect_equal(dim(alpha), c(60L, 3L, 12L)) # draws x chains x items
-expect_identical(alpha[, 3L, 5L], fit$chains[[3L]]$alpha[, 5L])
-
-expect_equal(dim(irt_chain_draws(fit, "sigma")), c(60L, 3L))
-expect_error(irt_chain_draws(fit, "theta")) # keep_theta was FALSE
-expect_error(irt_chain_draws(fit, "nonesuch")) # not a known quantity
-
-# --- the diagnostic over a fit ----------------------------------------------
-rh <- irt_rhat(fit)
-expect_equal(length(rh$ate), 1L)
-expect_equal(length(rh$sigma), 1L)
-expect_equal(length(rh$alpha), 12L) # one per item
-expect_equal(length(rh$beta), 12L)
-expect_null(rh$theta) # not kept, so not reported
-expect_true(is.finite(rh$max))
+alpha <- extract(fit, "alpha")
+expect_equal(dim(alpha), c(180L, 12L)) # pooled draws x items
+expect_equal(alpha[1:60, 5L], fit$alpha[, 1L, 5L])
 expect_equal(
-  rh$max,
-  max(c(rh$ate, rh$sigma, rh$alpha, rh$beta), na.rm = TRUE)
+  dim(extract(fit, "alpha", combine_chains = FALSE)),
+  c(60L, 3L, 12L)
 )
-expect_true(all(rh$alpha > 0.9)) # R-hat is bounded near 1 from below
 
-expect_stdout(print(fit), "irt_causal_chains")
+expect_error(extract(fit, "theta")) # keep_theta was FALSE
+expect_error(extract(fit, "nonesuch")) # not a known quantity
+
+# --- summary -----------------------------------------------------------------
+s <- summary(fit)
+expect_inherits(s, "summary.irt_causal_fit")
+expect_equal(sort(as.character(s$stats$variable)), c("ate", "sigma"))
+expect_equal(s$n_chains, 3L)
+expect_stdout(print(s), "ate")
+expect_stdout(print(fit), "irt_causal_fit")
+
+# item parameters are available but not the default: the max over hundreds of
+# R-hats has a null distribution that is not centred at one, so thresholding it
+# would flag converged fits
+s_alpha <- summary(fit, vars = c("ate", "alpha"))
+expect_equal(nrow(s_alpha$stats), 13L) # ate + 12 items
+expect_true("alpha[1]" %in% as.character(s_alpha$stats$variable))
+expect_error(summary(fit, vars = "theta")) # not kept
+
+if (requireNamespace("posterior", quietly = TRUE)) {
+  expect_true(all(c("rhat", "ess_bulk", "ess_tail") %in% names(s$stats)))
+  # the draws array round-trips through posterior
+  da <- posterior::as_draws_array(fit)
+  expect_equal(posterior::niterations(da), 60L)
+  expect_equal(posterior::nchains(da), 3L)
+}
 
 # --- two traits: everything per-bank ----------------------------------------
 sim2 <- simulate_irt_causal(
@@ -140,15 +153,16 @@ fit2 <- irt_causal_bart(
 expect_equal(fit2$seeds, c(12L, 14L)) # stride is n_traits = 2, so no overlap
 expect_equal(fit2$n_traits, 2L)
 
-alpha2 <- irt_chain_draws(fit2, "alpha")
+alpha2 <- extract(fit2, "alpha")
 expect_equal(length(alpha2), 2L)
-expect_equal(dim(alpha2[[1L]]), c(40L, 2L, 10L))
-expect_equal(dim(alpha2[[2L]]), c(40L, 2L, 14L))
+expect_equal(dim(alpha2[[1L]]), c(80L, 10L)) # 40 draws x 2 chains, pooled
+expect_equal(dim(alpha2[[2L]]), c(80L, 14L))
 
-rh2 <- irt_rhat(fit2)
-expect_equal(lengths(rh2$alpha), c(10L, 14L))
-expect_equal(lengths(rh2$theta), c(120L, 120L))
-expect_true(is.finite(rh2$max))
+# heterogeneous banks cannot share a rectangular axis, so they are flattened
+# into named variables instead
+s2 <- summary(fit2, vars = c("ate", "alpha"))
+expect_equal(nrow(s2$stats), 25L) # ate + 10 + 14
+expect_true("alpha[bank2,14]" %in% as.character(s2$stats$variable))
 
 # With two banks a chain consumes seeds[i] .. seeds[i] + 1, so seeds one apart
 # overlap and two chains would share a WALNUTS stream. Distinctness alone is

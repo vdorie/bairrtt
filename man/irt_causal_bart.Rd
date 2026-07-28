@@ -9,17 +9,17 @@ irt_causal_bart(
   y,
   z,
   n_burnin = 500L,
-  n_sampling = 1000L,
+  n_sampling = 2000L,
   theta_sd = 0.6,
   theta_accept_target = 0.44,
-  warmup_start = 50L,
+  warmup_start = 125L,
   beta_sd = 10,
   step_size = 0.1,
   n_theta_cutpoints = 100L,
   n_trees = 75L,
   n_threads = 1L,
-  n_chains = 1L,
-  n_cores = 1L,
+  n_chains = 4L,
+  n_cores = getOption("mc.cores", 1L),
   seed = 1L,
   seeds = NULL,
   keep_theta = FALSE,
@@ -65,15 +65,18 @@ each BART model (interior quantiles of a standard normal).}
 
 \item{n_threads}{Number of threads for the BART updates.}
 
-\item{n_chains}{Number of independent chains. At \code{1} (the default) the return
-value is the single fit described below; above \code{1} it is an
-\code{"irt_causal_chains"} object, which is what \code{\link[=irt_rhat]{irt_rhat()}} needs.}
+\item{n_chains}{Number of independent chains. Four by default, matching
+\pkg{dbarts} and \pkg{stan4bart}: a single chain admits no between-chain
+convergence diagnostic, and IRT models invite the sign and label
+multimodality such a diagnostic exists to catch. The return shape does not
+depend on this --- the chain axis is always present.}
 
-\item{n_cores}{Number of chains to run at once. A chain owns mutable dbarts
-samplers and an external-pointer WALNUTS state, so chains are separate
-processes rather than threads: this uses \code{\link[parallel:mclapply]{parallel::mclapply()}} and so has
-no effect on Windows, where the chains run sequentially. Draws do not depend
-on it either way.}
+\item{n_cores}{Number of chains to run at once, defaulting to
+\code{getOption("mc.cores")}. A chain owns mutable dbarts samplers and an
+external-pointer WALNUTS state, so chains are separate processes rather
+than threads: this uses \code{\link[parallel:mclapply]{parallel::mclapply()}} and so has no effect on
+Windows, where the chains run sequentially. Draws do not depend on it
+either way.}
 
 \item{seed}{Integer seed. This calls \code{\link[=set.seed]{set.seed()}} internally, so it
 overwrites the global RNG state (\code{.Random.seed}) as a side effect; it also
@@ -92,26 +95,29 @@ default to keep the result small.}
 \item{verbose}{If \code{TRUE}, print progress periodically.}
 }
 \value{
-With \code{n_chains > 1}, an \code{"irt_causal_chains"} object: a list holding
-\code{chains} (one ordinary single-chain fit per element, exactly as below),
-\code{seeds}, \code{n_chains}, \code{n_traits}, and the \code{call}. Use \code{\link[=irt_chain_draws]{irt_chain_draws()}} to
-pool draws across chains and \code{\link[=irt_rhat]{irt_rhat()}} to check that they agree.
-
-With \code{n_chains = 1}, a list of draws and diagnostics:
+An object of class \code{"irt_causal_fit"}. The chain axis is always the
+second one, at any number of chains, so nothing downstream has to branch on
+chain count; \code{mean()}, \code{quantile()}, and \code{hist()} treat the matrices as the
+pooled draws they are. Read it with \code{\link[=extract]{extract()}} and
+\link[=summary.irt_causal_fit]{summary()}.
 \describe{
-\item{\code{ate}}{Length-\code{n_sampling} vector of treatment-effect draws.}
-\item{\code{alpha}, \code{beta}}{\code{n_sampling} x \code{n_items} matrices of item-parameter
-draws; with more than one trait, a list of one such matrix per bank.}
-\item{\code{sigma}}{Length-\code{n_sampling} vector of response residual SD draws.}
-\item{\code{theta}}{\code{n_sampling} x \code{n_persons} matrix of \code{theta} draws (a list
-of one such matrix per trait when there is more than one), if
+\item{\code{ate}}{\code{n_sampling} x \code{n_chains} matrix of treatment-effect draws.}
+\item{\code{alpha}, \code{beta}}{\code{n_sampling} x \code{n_chains} x \code{n_items} arrays of
+item-parameter draws; with more than one trait, a list of one such
+array per bank.}
+\item{\code{sigma}}{\code{n_sampling} x \code{n_chains} matrix of response residual SD
+draws.}
+\item{\code{theta}}{\code{n_sampling} x \code{n_chains} x \code{n_persons} array of \code{theta}
+draws (a list of one per trait when there is more than one), if
 \code{keep_theta = TRUE}.}
 \item{\code{theta_accept}}{Per-scan \code{theta} acceptance rate, averaged over
-traits (length \code{n_burnin + n_sampling}).}
-\item{\code{theta_sd}}{Final (frozen) proposal SD.}
-\item{\code{theta_sd_trace}}{Per-scan adapted proposal SD.}
-\item{\code{tuning}}{Final WALNUTS tuning (see \code{\link[=irt_tuning]{irt_tuning()}}); with more than
-one trait, a list of one per bank.}
+traits: \code{(n_burnin + n_sampling)} x \code{n_chains}.}
+\item{\code{theta_sd}}{Final (frozen) proposal SD, one per chain.}
+\item{\code{theta_sd_trace}}{Per-scan adapted proposal SD, by chain.}
+\item{\code{tuning}}{Final WALNUTS tuning (see \code{\link[=irt_tuning]{irt_tuning()}}), one entry per
+chain, each itself one per bank when there is more than one trait.}
+\item{\code{seeds}, \code{n_chains}, \code{n_traits}, \code{n_items}, \code{n_sampling},
+\code{call}}{Run metadata.}
 }
 }
 \description{
@@ -145,9 +151,12 @@ from the response surface each sampling scan.
 \examples{
 sim <- simulate_irt_causal(n_persons = 200, n_items = 30, ate = -0.2, seed = 1)
 fit <- irt_causal_bart(sim$responses, sim$y, sim$z,
-                       n_burnin = 100, n_sampling = 200, seed = 1)
+                       n_burnin = 100, n_sampling = 200,
+                       n_chains = 2, seed = 1)
+fit
 mean(fit$ate)                      # posterior mean treatment effect (~ -0.2)
 quantile(fit$ate, c(0.025, 0.975)) # 95\% interval
+summary(fit)                       # R-hat and effective sample size
 
 # two latent traits, two item banks: pass a list of response matrices
 sim2 <- simulate_irt_causal(
@@ -155,20 +164,13 @@ sim2 <- simulate_irt_causal(
   ate = -0.2, prognostic = c(1.2, 0.8), seed = 1
 )
 fit2 <- irt_causal_bart(sim2$responses, sim2$y, sim2$z,
-                        n_burnin = 100, n_sampling = 200, seed = 1)
-mean(fit2$ate)
-length(fit2$alpha)                 # one item-parameter matrix per bank
-
-# four chains, for a between-chain convergence check
-fits <- irt_causal_bart(sim$responses, sim$y, sim$z,
                         n_burnin = 100, n_sampling = 200,
-                        n_chains = 4, seed = 1)
-fits
-irt_rhat(fits)$ate
-mean(irt_chain_draws(fits, "ate"))  # pooled over all four chains
+                        n_chains = 2, seed = 1)
+length(fit2$alpha)                 # one item-parameter array per bank
+dim(extract(fit2, "alpha")[[1]])   # pooled draws x items, bank 1
 
 }
 \seealso{
-\code{\link[=simulate_irt_causal]{simulate_irt_causal()}}, \code{\link[=irt_item_sampler]{irt_item_sampler()}}, \code{\link[=irt_rhat]{irt_rhat()}},
-\code{\link[=irt_chain_draws]{irt_chain_draws()}}
+\code{\link[=simulate_irt_causal]{simulate_irt_causal()}}, \code{\link[=irt_item_sampler]{irt_item_sampler()}},
+\link[=extract.irt_causal_fit]{extract()}, \link[=summary.irt_causal_fit]{summary()}
 }

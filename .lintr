@@ -10,8 +10,16 @@ linters: linters_with_defaults(
     # dotted.case admits the dot-prefixed internal Rcpp shims (.irt_draw_sample,
     # .irt_sampler_tuning); symbols admits operators; UPPERCASE admits matrix
     # names carried over from the C++ signatures (Y).
+    # The mixedDottedCase regex (taken from dbarts's .lintr) admits S3 methods
+    # whose generic has a snake_case name: as_draws_array.irt_causal_fit and
+    # as_draws_df.irt_causal_fit are posterior's generics, registered
+    # dynamically in R/hooks.R rather than via roxygen, so lintr cannot see
+    # that they are methods and reads them as ordinary names.
     object_name_linter(
-      styles = c("snake_case", "dotted.case", "symbols", "UPPERCASE")
+      styles = c("snake_case", "dotted.case", "symbols", "UPPERCASE"),
+      regexes = c(
+        mixedDottedCase = "^[.]?[[:alpha:]][[:alnum:]_]*([.][[:alnum:]_]+)*$"
+      )
     ),
     commented_code_linter = NULL,
     # <<- is used for closure state; pin the permission explicitly so a lintr

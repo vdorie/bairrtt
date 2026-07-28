@@ -16,31 +16,32 @@ fit <- irt_causal_bart(
   n_burnin = 40L,
   n_sampling = 80L,
   warmup_start = 20L,
+  n_chains = 1L,
   seed = 3L,
   keep_theta = TRUE
 )
 
 # --- shapes ------------------------------------------------------------------
-expect_equal(length(fit$ate), 80L)
-expect_equal(dim(fit$alpha), c(80L, 20L))
-expect_equal(dim(fit$beta), c(80L, 20L))
-expect_equal(length(fit$sigma), 80L)
-expect_equal(dim(fit$theta), c(80L, 200L))
-expect_equal(length(fit$theta_accept), 120L)
-expect_equal(length(fit$theta_sd_trace), 120L)
+expect_equal(dim(fit$ate), c(80L, 1L))
+expect_equal(dim(fit$alpha), c(80L, 1L, 20L))
+expect_equal(dim(fit$beta), c(80L, 1L, 20L))
+expect_equal(dim(fit$sigma), c(80L, 1L))
+expect_equal(dim(fit$theta), c(80L, 1L, 200L))
+expect_equal(dim(fit$theta_accept), c(120L, 1L))
+expect_equal(dim(fit$theta_sd_trace), c(120L, 1L))
 
 # --- invariants --------------------------------------------------------------
 expect_true(all(is.finite(fit$ate)))
 expect_true(all(fit$alpha > 0)) # discriminations positive
 expect_true(all(fit$sigma > 0))
-expect_true(isTRUE(fit$tuning$frozen)) # WALNUTS frozen for sampling
-expect_true(fit$tuning$warmup_iter > 0) # adaptation actually happened
+expect_true(isTRUE(fit$tuning[[1L]]$frozen)) # WALNUTS frozen for sampling
+expect_true(fit$tuning[[1L]]$warmup_iter > 0) # adaptation actually happened
 expect_true(all(fit$theta_accept >= 0 & fit$theta_accept <= 1))
 
 # recovery is loose at this size, but the ATE posterior should be in a sane
 # range and item parameters should correlate with the truth.
-expect_true(mean(fit$ate) > -1.5 && mean(fit$ate) < 0.5)
-expect_true(cor(colMeans(fit$beta), sim$beta) > 0.8)
+expect_true(mean(fit$ate) > -0.9 && mean(fit$ate) < 0.5)
+expect_true(cor(apply(fit$beta, 3L, mean), sim$beta) > 0.8)
 
 # --- reproducibility: same seed -> identical draws ---------------------------
 fit2 <- irt_causal_bart(
@@ -50,6 +51,7 @@ fit2 <- irt_causal_bart(
   n_burnin = 40L,
   n_sampling = 80L,
   warmup_start = 20L,
+  n_chains = 1L,
   seed = 3L,
   keep_theta = TRUE
 )
@@ -65,10 +67,11 @@ fit_nt <- irt_causal_bart(
   n_burnin = 20L,
   n_sampling = 20L,
   warmup_start = 10L,
+  n_chains = 1L,
   seed = 4L
 )
 expect_null(fit_nt$theta)
-expect_equal(length(fit_nt$ate), 20L)
+expect_equal(dim(fit_nt$ate), c(20L, 1L))
 
 # --- n_burnin = 0 runs and freezes the item sampler immediately --------------
 fit_nb <- irt_causal_bart(
@@ -77,11 +80,12 @@ fit_nb <- irt_causal_bart(
   sim$z,
   n_burnin = 0L,
   n_sampling = 20L,
+  n_chains = 1L,
   seed = 5L
 )
-expect_equal(length(fit_nb$ate), 20L)
-expect_true(isTRUE(fit_nb$tuning$frozen))
-expect_equal(length(fit_nb$theta_accept), 20L)
+expect_equal(dim(fit_nb$ate), c(20L, 1L))
+expect_true(isTRUE(fit_nb$tuning[[1L]]$frozen))
+expect_equal(dim(fit_nb$theta_accept), c(20L, 1L))
 
 # --- argument checks ---------------------------------------------------------
 expect_error(irt_causal_bart(sim$responses, sim$y[-1], sim$z)) # y length

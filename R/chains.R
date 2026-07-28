@@ -1,5 +1,5 @@
-# Multiple chains: the runner behind irt_causal_bart(n_chains > 1), plus the
-# accessor and the between-chain diagnostic over the result.
+# Running chains and assembling them into a fit. The diagnostics over the
+# result live in R/diagnostics.R.
 
 # Run one chain per seed. Chains cannot share a process: each owns mutable
 # dbarts samplers and an XPtr-held WALNUTS state (see the IrtSampler note in
@@ -64,48 +64,37 @@ run_chains <- function(spec, seeds, n_cores) {
   fits
 }
 
-#' Per-chain draws from a multi-chain fit
-#'
-#' Pulls one quantity out of every chain of an `"irt_causal_chains"` object and
-#' stacks the chains into a single array, which is the shape both [irt_rhat()]
-#' and any pooling want. Note the plural: [irt_draw()] is the unrelated
-#' single-step advance of a standalone item sampler.
-#'
-#' @param x An `"irt_causal_chains"` object, from [irt_causal_bart()] with
-#'   `n_chains > 1`.
-#' @param what Which quantity to extract.
-#'
-#' @return For a per-draw scalar (`ate`, `sigma`), an `n_sampling` x `n_chains`
-#'   matrix. For a per-draw vector (`alpha`, `beta`, `theta`), an `n_sampling` x
-#'   `n_chains` x `n_par` array. With more than one trait, a list of one such
-#'   array per item bank. Pool with `c()` or `as.vector()`.
-#'
-#' @examples
-#' sim <- simulate_irt_causal(n_persons = 100, n_items = 15, seed = 1)
-#' fit <- irt_causal_bart(sim$responses, sim$y, sim$z,
-#'                        n_burnin = 20, n_sampling = 40,
-#'                        warmup_start = 10, n_chains = 2, seed = 1)
-#' dim(irt_chain_draws(fit, "ate"))   # 40 draws x 2 chains
-#' mean(irt_chain_draws(fit, "ate"))  # pooled posterior mean
-#'
-#' @seealso [irt_rhat()], [irt_causal_bart()]
-#' @export
-irt_chain_draws <- function(
-  x,
-  what = c("ate", "sigma", "alpha", "beta", "theta")
-) {
-  check_chains(x)
-  what <- match.arg(what)
-  per_chain <- lapply(x$chains, `[[`, what)
-  if (is.null(per_chain[[1L]])) {
-    stop(
-      "'",
-      what,
-      "' was not kept by this fit",
-      if (what == "theta") "; refit with keep_theta = TRUE" else ""
-    )
+# Stack per-chain results into one object. The chain axis is always present,
+# including at a single chain, so nothing downstream has to branch on chain
+# count -- the cost is that `ate` is an n_sampling x n_chains matrix rather
+# than a vector, which mean(), quantile(), and hist() all handle unchanged.
+new_irt_causal_fit <- function(chains, seeds, n_traits, n_items, call) {
+  stack <- function(nm) {
+    if (is.null(chains[[1L]][[nm]])) {
+      return(NULL)
+    }
+    bind_chain_draws(lapply(chains, `[[`, nm))
   }
-  bind_chain_draws(per_chain)
+  structure(
+    list(
+      ate = stack("ate"),
+      alpha = stack("alpha"),
+      beta = stack("beta"),
+      sigma = stack("sigma"),
+      theta = stack("theta"),
+      theta_accept = stack("theta_accept"),
+      theta_sd = vapply(chains, `[[`, numeric(1L), "theta_sd"),
+      theta_sd_trace = stack("theta_sd_trace"),
+      tuning = lapply(chains, `[[`, "tuning"),
+      n_chains = length(chains),
+      n_traits = n_traits,
+      n_items = n_items,
+      n_sampling = length(chains[[1L]]$ate),
+      seeds = seeds,
+      call = call
+    ),
+    class = "irt_causal_fit"
+  )
 }
 
 # Stack a per-chain list into a chain-major array, recursing into the per-bank
@@ -127,174 +116,4 @@ bind_chain_draws <- function(per_chain) {
     return(aperm(stacked, c(1L, 3L, 2L)))
   }
   matrix(unlist(per_chain, use.names = FALSE), ncol = length(per_chain))
-}
-
-#' Between-chain convergence diagnostic (R-hat)
-#'
-#' Rank-normalized split R-hat for every quantity a multi-chain fit kept. This
-#' is the diagnostic a single chain cannot provide, and the one that exposes the
-#' sign and label multimodality that IRT models invite: a chain that settles on
-#' `-theta` rather than `theta` disagrees with its siblings, and R-hat says so.
-#'
-#' Each chain is split in half before comparison, so a within-chain trend
-#' registers as between-chain disagreement. The reported value is the larger of
-#' the plain and folded rank-normalized statistics, following Vehtari et al.
-#' (2021), which is what `posterior::rhat()` computes. Values above roughly 1.01
-#' indicate the chains have not mixed; a constant quantity gives `NA`, where
-#' R-hat is undefined.
-#'
-#' @param x An `"irt_causal_chains"` object, from [irt_causal_bart()] with
-#'   `n_chains > 1`.
-#'
-#' @return A named list with one entry per quantity (`ate` and `sigma` scalar,
-#'   `alpha`/`beta`/`theta` one value per parameter, or a list of those per item
-#'   bank when there is more than one trait), plus `max`, the largest R-hat over
-#'   all of them.
-#'
-#' @references Vehtari, A., Gelman, A., Simpson, D., Carpenter, B., and
-#'   Bürkner, P.-C. (2021). Rank-normalization, folding, and localization: an
-#'   improved R-hat for assessing convergence of MCMC. *Bayesian Analysis*
-#'   16(2), 667--718.
-#'
-#' @examples
-#' sim <- simulate_irt_causal(n_persons = 100, n_items = 15, seed = 1)
-#' fit <- irt_causal_bart(sim$responses, sim$y, sim$z,
-#'                        n_burnin = 20, n_sampling = 40,
-#'                        warmup_start = 10, n_chains = 2, seed = 1)
-#' irt_rhat(fit)$ate
-#' irt_rhat(fit)$max
-#'
-#' @seealso [irt_chain_draws()], [irt_causal_bart()]
-#' @export
-irt_rhat <- function(x) {
-  check_chains(x)
-  out <- list()
-  for (nm in c("ate", "sigma", "alpha", "beta", "theta")) {
-    if (is.null(x$chains[[1L]][[nm]])) {
-      next
-    }
-    out[[nm]] <- rhat_of(irt_chain_draws(x, nm))
-  }
-  all_values <- unlist(out, use.names = FALSE)
-  out$max <- if (all(is.na(all_values))) {
-    NA_real_
-  } else {
-    max(all_values, na.rm = TRUE)
-  }
-  out
-}
-
-# Walk whatever irt_chain_draws() returned down to draws x chains matrices.
-rhat_of <- function(draws) {
-  if (is.list(draws)) {
-    return(lapply(draws, rhat_of))
-  }
-  if (length(dim(draws)) == 3L) {
-    # one draws x chains slice per parameter
-    return(vapply(
-      asplit(draws, 3L),
-      rhat_matrix,
-      numeric(1L),
-      USE.NAMES = FALSE
-    ))
-  }
-  rhat_matrix(draws)
-}
-
-# Rank-normalized split R-hat, as the larger of the plain and folded values.
-# `m` is draws x chains.
-rhat_matrix <- function(m) {
-  m <- as.matrix(m)
-  if (nrow(m) < 4L || anyNA(m) || !all(is.finite(m))) {
-    return(NA_real_)
-  }
-  if (all(m == m[1L])) {
-    return(NA_real_)
-  }
-  folded <- abs(m - stats::median(m))
-  max(rhat_rank(m), rhat_rank(folded))
-}
-
-rhat_rank <- function(m) {
-  rhat_basic(z_scale(split_chains(m)))
-}
-
-# Split every chain in half, so a within-chain trend shows up as between-chain
-# disagreement. An odd number of draws drops the middle one.
-split_chains <- function(m) {
-  n <- nrow(m)
-  if (n < 2L) {
-    return(m)
-  }
-  half <- n / 2
-  cbind(
-    m[seq_len(floor(half)), , drop = FALSE],
-    m[ceiling(half + 1):n, , drop = FALSE]
-  )
-}
-
-# Blom rank normalization: rank across all chains at once, then to normal
-# scores. This is what makes the statistic robust to heavy tails and to chains
-# that agree on location but not on scale.
-z_scale <- function(m) {
-  r <- rank(m, ties.method = "average")
-  matrix(stats::qnorm((r - 3 / 8) / (length(r) + 1 / 4)), nrow = nrow(m))
-}
-
-# The classic Gelman-Rubin between/within statistic, on already-transformed
-# draws.
-#
-# Zero within-chain variance is two opposite situations and they must not be
-# conflated. If the chains also agree, the quantity is constant and R-hat is
-# undefined (NA). If they sit at DIFFERENT values, every chain is frozen
-# somewhere else -- the loudest non-convergence there is -- and R-hat is
-# infinite. Returning NA for the second hides it, and irt_rhat()'s na.rm then
-# drops it out of the reported maximum entirely.
-rhat_basic <- function(m) {
-  n <- nrow(m)
-  within <- mean(apply(m, 2L, stats::var))
-  between <- n * stats::var(colMeans(m))
-  if (!is.finite(within) || !is.finite(between)) {
-    return(NA_real_)
-  }
-  if (within <= 0) {
-    return(if (between > 0) Inf else NA_real_)
-  }
-  sqrt((between / within + n - 1) / n)
-}
-
-#' @export
-print.irt_causal_chains <- function(x, ...) {
-  ate <- irt_chain_draws(x, "ate")
-  ci <- stats::quantile(ate, c(0.025, 0.975), names = FALSE)
-  max_rhat <- irt_rhat(x)$max
-  cat(sprintf(
-    "<irt_causal_chains: %d chains x %d draws, %d trait%s>\n",
-    x$n_chains,
-    nrow(ate),
-    x$n_traits,
-    if (x$n_traits == 1L) "" else "s"
-  ))
-  cat(sprintf(
-    "  ate       %.4f  95%% [%.4f, %.4f]\n",
-    mean(ate),
-    ci[1L],
-    ci[2L]
-  ))
-  cat(sprintf(
-    "  max R-hat %.4f%s\n",
-    max_rhat,
-    if (isTRUE(max_rhat > 1.01)) "   not converged (> 1.01)" else ""
-  ))
-  cat(sprintf("  seeds     %s\n", paste(x$seeds, collapse = ", ")))
-  invisible(x)
-}
-
-check_chains <- function(x) {
-  if (!inherits(x, "irt_causal_chains")) {
-    stop(
-      "'x' must be an 'irt_causal_chains' (see irt_causal_bart() with ",
-      "n_chains > 1)"
-    )
-  }
 }

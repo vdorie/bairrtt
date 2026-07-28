@@ -17,17 +17,6 @@ items
     per-draw reducing-callback shape stan4bart has scoped for the same
     problem (stan4bart TODO "callback-estimators"). consumer-gated.
 
-  effective-sample-size: irt_rhat() reports R-hat but nothing about how
-    much information the draws carry, so there is no way to tell a
-    converged-but-autocorrelated run from an efficient one, and no basis
-    for choosing n_sampling. Wants bulk and tail ESS over the same
-    draws-by-chains arrays irt_chain_draws() already returns; the
-    machinery (split, rank-normalize, fold) is in R/chains.R and would be
-    shared. Deliberately left out of multiple-chains, which scoped to the
-    between-chain diagnostic only - see docs/plans/multiple-chains.md,
-    "Constraints". Needs an FFT autocovariance and Geyer's initial
-    monotone sequence, so it is real numerical code, not a wrapper.
-
   theta-block-move: dbarts::updatePredictorPerObservationJointly() takes
     a SINGLE shared column by design (it errors on more; see the
     function's own guard). multi-trait therefore landed with a

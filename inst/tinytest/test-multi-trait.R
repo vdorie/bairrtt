@@ -34,22 +34,23 @@ fit <- irt_causal_bart(
   n_burnin = 40L,
   n_sampling = 80L,
   warmup_start = 20L,
+  n_chains = 1L,
   seed = 7L,
   keep_theta = TRUE
 )
 
 # --- shapes: one entry per bank ----------------------------------------------
-expect_equal(length(fit$ate), 80L)
+expect_equal(dim(fit$ate), c(80L, 1L))
 expect_equal(length(fit$alpha), 2L)
-expect_equal(dim(fit$alpha[[1L]]), c(80L, 15L))
-expect_equal(dim(fit$alpha[[2L]]), c(80L, 20L))
-expect_equal(dim(fit$beta[[1L]]), c(80L, 15L))
-expect_equal(dim(fit$beta[[2L]]), c(80L, 20L))
+expect_equal(dim(fit$alpha[[1L]]), c(80L, 1L, 15L))
+expect_equal(dim(fit$alpha[[2L]]), c(80L, 1L, 20L))
+expect_equal(dim(fit$beta[[1L]]), c(80L, 1L, 15L))
+expect_equal(dim(fit$beta[[2L]]), c(80L, 1L, 20L))
 expect_equal(length(fit$theta), 2L)
-expect_equal(dim(fit$theta[[1L]]), c(80L, 200L))
-expect_equal(dim(fit$theta[[2L]]), c(80L, 200L))
-expect_equal(length(fit$tuning), 2L)
-expect_equal(length(fit$theta_accept), 120L)
+expect_equal(dim(fit$theta[[1L]]), c(80L, 1L, 200L))
+expect_equal(dim(fit$theta[[2L]]), c(80L, 1L, 200L))
+expect_equal(length(fit$tuning[[1L]]), 2L)
+expect_equal(dim(fit$theta_accept), c(120L, 1L))
 
 # --- invariants --------------------------------------------------------------
 expect_true(all(is.finite(fit$ate)))
@@ -57,14 +58,22 @@ expect_true(all(fit$alpha[[1L]] > 0)) # discriminations positive
 expect_true(all(fit$alpha[[2L]] > 0))
 expect_true(all(fit$sigma > 0))
 # every bank's WALNUTS sampler froze exactly once and did adapt
-expect_true(all(vapply(fit$tuning, function(t) isTRUE(t$frozen), logical(1L))))
-expect_true(all(vapply(fit$tuning, function(t) t$warmup_iter > 0, logical(1L))))
+expect_true(all(vapply(
+  fit$tuning[[1L]],
+  function(t) isTRUE(t$frozen),
+  logical(1L)
+)))
+expect_true(all(vapply(
+  fit$tuning[[1L]],
+  function(t) t$warmup_iter > 0,
+  logical(1L)
+)))
 
 # recovery is loose at this size, but each bank's difficulties should track
 # the truth and the ATE posterior should sit in a sane range.
-expect_true(mean(fit$ate) > -1.5 && mean(fit$ate) < 0.5)
-expect_true(cor(colMeans(fit$beta[[1L]]), sim$beta[[1L]]) > 0.8)
-expect_true(cor(colMeans(fit$beta[[2L]]), sim$beta[[2L]]) > 0.8)
+expect_true(mean(fit$ate) > -0.9 && mean(fit$ate) < 0.5)
+expect_true(cor(apply(fit$beta[[1L]], 3L, mean), sim$beta[[1L]]) > 0.8)
+expect_true(cor(apply(fit$beta[[2L]], 3L, mean), sim$beta[[2L]]) > 0.8)
 
 # --- reproducibility ---------------------------------------------------------
 fit2 <- irt_causal_bart(
@@ -74,6 +83,7 @@ fit2 <- irt_causal_bart(
   n_burnin = 40L,
   n_sampling = 80L,
   warmup_start = 20L,
+  n_chains = 1L,
   seed = 7L,
   keep_theta = TRUE
 )
@@ -91,6 +101,7 @@ fit_bare <- irt_causal_bart(
   n_burnin = 10L,
   n_sampling = 20L,
   warmup_start = 5L,
+  n_chains = 1L,
   seed = 8L
 )
 fit_list <- irt_causal_bart(
@@ -100,6 +111,7 @@ fit_list <- irt_causal_bart(
   n_burnin = 10L,
   n_sampling = 20L,
   warmup_start = 5L,
+  n_chains = 1L,
   seed = 8L
 )
 expect_identical(fit_bare$ate, fit_list$ate)

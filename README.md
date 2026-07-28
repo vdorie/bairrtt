@@ -72,7 +72,7 @@ fit <- irt_causal_bart(sim$responses, sim$y, sim$z,
                        n_burnin = 150, n_sampling = 400, seed = 1)
 
 mean(fit$ate)
-cor(colMeans(fit$beta[[1]]), sim$beta[[1]])   # per-bank item recovery
+cor(colMeans(extract(fit, "beta")[[1]]), sim$beta[[1]])   # per-bank recovery
 ```
 
 Only disjoint banks are supported. Genuine multidimensional IRT, where one item
@@ -83,32 +83,27 @@ needs a constraint this interface does not express.
 
 IRT models invite multimodality --- nothing separates `theta` from `-theta` but
 the sign constraint on the discriminations --- and a single chain that settled in
-the wrong mode looks healthy from the inside. Run several and compare them.
+the wrong mode looks healthy from the inside. `n_chains` defaults to four for
+that reason, matching `dbarts` and `stan4bart`.
 
 ```r
-fits <- irt_causal_bart(sim$responses, sim$y, sim$z,
-                        n_burnin = 500, n_sampling = 1000,
-                        n_chains = 4, n_cores = 4, seed = 1)
-fits                                  # chains, pooled ate, max R-hat
+fit <- irt_causal_bart(sim$responses, sim$y, sim$z,
+                       n_burnin = 500, n_sampling = 2000,
+                       n_chains = 4, n_cores = 4, seed = 1)
 
-irt_rhat(fits)$max                    # rank-normalized split R-hat
-mean(irt_chain_draws(fits, "ate"))    # pooled over all chains
+summary(fit)                 # R-hat, bulk and tail ESS, on ate and sigma
+extract(fit, "ate")          # draws pooled across chains
 ```
 
 A chain's seed determines it completely, so `n_cores` changes only the wall
 clock, never the draws. It forks, so it is a no-op on Windows.
 
-## The WALNUTS item sampler
-
-The item-parameter sampler is exported for reuse in other models. Hold `theta`
-fixed within a draw but change it between draws:
-
-```r
-s <- irt_item_sampler(responses, alpha, beta, seed = 1)
-for (i in seq_len(n_warmup)) irt_warmup(s, theta)  # adapt (theta may change)
-irt_freeze(s)                                      # fix the tuning
-draw <- irt_draw(s, theta)                         # c(alpha, beta)
-```
+Judge convergence on `ate` and `sigma`, which is what `summary()` reports by
+default. The item and person parameters are available via `vars` and worth
+reading, but read their effective sample sizes rather than thresholding their
+R-hats: the *maximum* of a few hundred R-hats has a null distribution that is
+not centred at one, so a max-over-everything would flag a perfectly converged
+fit essentially always.
 
 ## Licensing
 

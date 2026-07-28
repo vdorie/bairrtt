@@ -21,14 +21,31 @@
   previous draws. Only disjoint banks (each item loading on one trait) are
   supported.
 
-* `irt_causal_bart()` runs several chains via `n_chains`, optionally in
-  parallel via `n_cores`. A chain's seed determines it completely, so `n_cores`
-  changes only the wall clock, never the draws; it is fork-based, and so a no-op
-  on Windows. `irt_rhat()` reports rank-normalized split R-hat --- the
-  between-chain diagnostic a single chain cannot give, and the one that exposes
-  the sign and label multimodality IRT invites --- and `irt_chain_draws()` pools
-  draws across chains. `n_chains = 1` keeps the previous return shape and the
-  previous draws.
+* `irt_causal_bart()` runs several chains via `n_chains`, four by default,
+  optionally in parallel via `n_cores` (defaulting to `getOption("mc.cores")`).
+  A chain's seed determines it completely, so `n_cores` changes only the wall
+  clock, never the draws; it is fork-based, and so a no-op on Windows. A single
+  chain admits no between-chain diagnostic, and IRT models invite the sign and
+  label multimodality such a diagnostic exists to catch.
+
+* The fit is now an `"irt_causal_fit"` object with the chain axis always
+  present, at any chain count, so nothing downstream branches on it. Read it
+  with `extract()` --- `dbarts`'s generic, which `stan4bart` also registers on
+  --- and `summary()`, which delegates to `posterior::summarise_draws()` for
+  rank-normalized split R-hat with bulk and tail effective sample size, and
+  degrades to quantiles when `posterior` is not installed.
+
+* `summary()` defaults to `ate` and `sigma`. R-hat is conventionally read
+  against 1.01, but the maximum of many R-hats has a null distribution that is
+  not centred at one, so a max over hundreds of item and person parameters
+  flags perfectly converged fits. Those parameters are available via `vars` and
+  are better judged on effective sample size.
+
+* `n_sampling` now defaults to 2000 and `warmup_start` to 125. Measured on
+  300 persons and 30 items, doubling the kept draws roughly doubles every
+  effective sample size at exactly twice the cost; longer burn-in, per-person
+  proposal adaptation, and other `n_trees` or `theta_accept_target` settings
+  were all measured and bought nothing.
 
 * `simulate_irt_causal()` generates data from the fitted model, with `n_traits`
   banks and a per-trait `prognostic` coefficient.

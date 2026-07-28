@@ -60,7 +60,14 @@ fit <- irt_causal_bart(
   sim$responses, sim$y, sim$z,
   n_burnin = 100, n_sampling = 250, seed = 42
 )
+fit
 ```
+
+`n_chains` defaults to four, so this is four independent chains; `n_cores`
+(default `getOption("mc.cores")`) controls how many run at once without
+affecting the draws. The chain axis is always the second one, so `fit$ate` is a
+`250 x 4` matrix that `mean()`, `quantile()`, and `hist()` treat as the 1000
+pooled draws it is.
 
 ## Treatment effect
 
@@ -87,7 +94,9 @@ is fixed only by convention and is stretched by the finite number of items
 measuring each person; discrimination sharpens as that number grows.
 
 ```{r items}
-alpha_hat <- colMeans(fit$alpha)
+alpha_draws <- extract(fit, "alpha")   # pooled draws x items
+beta_draws  <- extract(fit, "beta")
+alpha_hat <- colMeans(alpha_draws)
 
 # standard-normal population, for integrating each item's characteristic curve
 grid <- qnorm(ppoints(200))
@@ -100,9 +109,9 @@ endorsement <- function(alpha, beta)
          numeric(1))
 
 pi_true <- endorsement(sim$alpha, sim$beta)
-pi_hat  <- rowMeans(vapply(seq_len(nrow(fit$beta)),
-                           function(s) endorsement(fit$alpha[s, ], fit$beta[s, ]),
-                           numeric(ncol(fit$beta))))
+pi_hat  <- rowMeans(vapply(seq_len(nrow(beta_draws)),
+                           function(s) endorsement(alpha_draws[s, ], beta_draws[s, ]),
+                           numeric(ncol(beta_draws))))
 
 c(alpha_cor      = cor(alpha_hat, sim$alpha),
   difficulty_cor = cor(pi_hat,    pi_true))
@@ -119,9 +128,9 @@ default) during burn-in and then frozen, and the WALNUTS item sampler is frozen
 for the sampling phase.
 
 ```{r diagnostics}
-mean(tail(fit$theta_accept, 250))   # sampling-phase theta acceptance
-fit$theta_sd                        # frozen proposal SD
-fit$tuning$frozen                   # WALNUTS frozen?
+colMeans(tail(fit$theta_accept, 250))  # sampling-phase theta acceptance
+fit$theta_sd                           # frozen proposal SD, per chain
+fit$tuning[[1]]$frozen                 # WALNUTS frozen?
 ```
 
 Those are all *within*-chain. The question they cannot answer is whether the
@@ -129,49 +138,49 @@ chain went to the right place at all --- which matters here, because IRT models
 invite multimodality. Nothing in the likelihood distinguishes `theta` from
 `-theta` except the sign constraint on the discriminations, and with several
 traits the labels can permute too. A single chain that settled in the wrong mode
-looks perfectly healthy from the inside.
+looks perfectly healthy from the inside. That is why `n_chains` defaults to four.
 
-`n_chains` runs independent chains from different seeds, and `irt_rhat()`
-compares them. A chain's seed determines it completely, so `n_cores` only
-changes how long it takes, never what comes out.
+`summary()` reports rank-normalized split R-hat with bulk and tail effective
+sample size (via [posterior](https://cran.r-project.org/package=posterior) when
+it is installed). Each chain is split in half first, so a within-chain trend
+registers as between-chain disagreement.
 
-```{r chains}
-fits <- irt_causal_bart(
-  sim$responses, sim$y, sim$z,
-  n_burnin = 100, n_sampling = 250, n_chains = 4, seed = 42
-)
-fits
+```{r summary}
+summary(fit)
 ```
 
-`irt_rhat()` reports rank-normalized split R-hat per quantity. Roughly 1.01 is
-the usual threshold; each chain is split in half first, so a within-chain trend
-also registers.
+**Read R-hat on the estimand, not on the maximum over everything.** R-hat is
+conventionally judged against 1.01, but the *maximum* of many R-hats has a null
+distribution that is not centred at one. With a few hundred effective draws per
+parameter, a perfectly converged fit exceeds 1.01 on at least one of a few
+hundred item and person parameters essentially always --- so a "max R-hat"
+across all of them would condemn every fit this package produces, and condemn
+larger ones harder. `summary()` therefore defaults to `ate` and `sigma`. The
+item and person parameters are available on request and are worth reading, but
+read their effective sample sizes rather than thresholding their R-hats:
 
-```{r rhat}
-rh <- irt_rhat(fits)
-c(ate = rh$ate, sigma = rh$sigma,
-  alpha_max = max(rh$alpha), beta_max = max(rh$beta), overall = rh$max)
+```{r summary_items}
+head(summary(fit, vars = "alpha")$stats, 3)
 ```
 
-Pool across chains with `irt_chain_draws()`, which stacks them into a
-draws-by-chains matrix:
+Pool across chains with `extract()`, \pkg{dbarts}'s generic:
 
 ```{r pool}
-ate <- irt_chain_draws(fits, "ate")
-dim(ate)
+ate <- extract(fit, "ate")          # 250 x 4 draws, pooled
+length(ate)
 c(mean = mean(ate), lower = quantile(ate, 0.025, names = FALSE),
   upper = quantile(ate, 0.975, names = FALSE))
 ```
 
-For contrast, a run cut far too short. The point is that its `ate` posterior is
-not obviously wrong to look at --- R-hat is what tells you not to trust it.
+For contrast, a run cut far too short. Its `ate` posterior is not obviously
+wrong to look at; the diagnostics are what tell you not to trust it.
 
 ```{r notconverged}
 short <- irt_causal_bart(
   sim$responses, sim$y, sim$z,
-  n_burnin = 5, n_sampling = 25, warmup_start = 2, n_chains = 4, seed = 42
+  n_burnin = 5, n_sampling = 25, warmup_start = 2, seed = 42
 )
-short
+summary(short)
 ```
 
 ## More than one latent trait
@@ -212,8 +221,8 @@ c(mean = mean(fit2$ate),
   upper = quantile(fit2$ate, 0.975, names = FALSE))
 
 # item difficulties still track the truth within each bank
-vapply(1:2, function(k) cor(colMeans(fit2$beta[[k]]), sim2$beta[[k]]),
-       numeric(1))
+beta2 <- extract(fit2, "beta")     # one pooled draws x items matrix per bank
+vapply(1:2, function(k) cor(colMeans(beta2[[k]]), sim2$beta[[k]]), numeric(1))
 ```
 
 Only the disjoint-bank case is supported. Genuine multidimensional IRT, where
