@@ -22,7 +22,7 @@ Encoding: UTF-8
 Depends: R (>= 4.3.0)
 Imports:
     Rcpp,
-    dbarts (>= 1.0.0),
+    dbarts (>= 1.0-0),
     parallel,
     stats
 LinkingTo: Rcpp, RcppEigen
@@ -33,5 +33,8 @@ Suggests:
     rmarkdown
 SystemRequirements: C++20
 VignetteBuilder: knitr
+NeedsCompilation: yes
+URL: https://github.com/vdorie/bairrtt
+BugReports: https://github.com/vdorie/bairrtt/issues
 RoxygenNote: 8.0.0
 Roxygen: list(markdown = TRUE)
