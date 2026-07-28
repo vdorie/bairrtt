@@ -24,6 +24,39 @@
 #' The treatment-effect estimand `E[f(1, theta) - f(0, theta)]` is accumulated
 #' from the response surface each sampling scan.
 #'
+#' @section Assumptions:
+#'
+#' The returned `ate` is a causal effect only under the following. They are
+#' strong, and the package cannot check any of them.
+#'
+#' * **Items are measured before treatment.** If the responses postdate `z`,
+#'   `theta` is a mediator or a collider rather than a confounder, and
+#'   conditioning on it can move the estimate in either direction. This is the
+#'   assumption most easily violated in practice and the one with the worst
+#'   consequences.
+#' * **`theta` is the whole confounder.** The model contains no observed
+#'   covariates, so it assumes `Y(z)` is independent of `Z` given the latent
+#'   trait(s) alone. Any confounding not routed through `theta` is unadjusted.
+#' * **Overlap:** `0 < P(Z = 1 | theta) < 1` across the support of `theta`.
+#' * **Exclusion:** the item responses are pure measures of `theta`, with no
+#'   direct path to `y` or `z`. Differential item functioning by treatment group
+#'   violates this.
+#' * **The measurement model is correct** --- 2PL, local independence, one trait
+#'   per bank. This is what does the identifying work, so misspecification is
+#'   not benign: adjusting for a mismeasured confounder leaves residual
+#'   confounding whose direction is not guaranteed to be conservative (Greenland
+#'   1980; Ogburn and VanderWeele 2012). Fewer or noisier items attenuate the
+#'   estimate toward zero, the usual measurement-error signature.
+#' * **SUTVA**, as for any such estimand.
+#'
+#' Because the estimand is a contrast of the response surface at `z = 1` and
+#' `z = 0`, it is invariant to the location and scale conventions of the latent
+#' metric --- unlike "the effect of a one-SD increase in `theta`", which is not.
+#'
+#' A useful comparator, requiring weaker assumptions than the 2PL, is to put the
+#' sum score (or the raw responses) directly into the outcome surface. If the
+#' two disagree, the measurement model is doing the work and deserves scrutiny.
+#'
 #' @param responses Either a `n_persons` x `n_items` matrix (or data frame) of
 #'   0/1 item responses --- the single-trait case --- or a list of such matrices,
 #'   one item bank per latent trait. Every item loads on exactly one trait; banks

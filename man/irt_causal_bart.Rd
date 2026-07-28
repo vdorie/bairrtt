@@ -148,6 +148,42 @@ one larger one.
 The treatment-effect estimand \code{E[f(1, theta) - f(0, theta)]} is accumulated
 from the response surface each sampling scan.
 }
+\section{Assumptions}{
+
+
+The returned \code{ate} is a causal effect only under the following. They are
+strong, and the package cannot check any of them.
+\itemize{
+\item \strong{Items are measured before treatment.} If the responses postdate \code{z},
+\code{theta} is a mediator or a collider rather than a confounder, and
+conditioning on it can move the estimate in either direction. This is the
+assumption most easily violated in practice and the one with the worst
+consequences.
+\item \strong{\code{theta} is the whole confounder.} The model contains no observed
+covariates, so it assumes \code{Y(z)} is independent of \code{Z} given the latent
+trait(s) alone. Any confounding not routed through \code{theta} is unadjusted.
+\item \strong{Overlap:} \verb{0 < P(Z = 1 | theta) < 1} across the support of \code{theta}.
+\item \strong{Exclusion:} the item responses are pure measures of \code{theta}, with no
+direct path to \code{y} or \code{z}. Differential item functioning by treatment group
+violates this.
+\item \strong{The measurement model is correct} --- 2PL, local independence, one trait
+per bank. This is what does the identifying work, so misspecification is
+not benign: adjusting for a mismeasured confounder leaves residual
+confounding whose direction is not guaranteed to be conservative (Greenland
+1980; Ogburn and VanderWeele 2012). Fewer or noisier items attenuate the
+estimate toward zero, the usual measurement-error signature.
+\item \strong{SUTVA}, as for any such estimand.
+}
+
+Because the estimand is a contrast of the response surface at \code{z = 1} and
+\code{z = 0}, it is invariant to the location and scale conventions of the latent
+metric --- unlike "the effect of a one-SD increase in \code{theta}", which is not.
+
+A useful comparator, requiring weaker assumptions than the 2PL, is to put the
+sum score (or the raw responses) directly into the outcome surface. If the
+two disagree, the measurement model is doing the work and deserves scrutiny.
+}
+
 \examples{
 sim <- simulate_irt_causal(n_persons = 200, n_items = 30, ate = -0.2, seed = 1)
 fit <- irt_causal_bart(sim$responses, sim$y, sim$z,

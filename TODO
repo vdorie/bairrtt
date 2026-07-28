@@ -9,6 +9,82 @@ planning/implementation/review process is docs/plans/README.md.
 Seeded 2026-07-27 from the state of the initial import; prune freely.
 
 items
+  covariates: irt_causal_bart() takes no observed covariates - the
+    outcome model is reformulate(c("z", theta_names)) and nothing else -
+    so it assumes the latent trait is the ENTIRE confounder, which no
+    applied study satisfies. Needed in two places, and both matter: the
+    BART surfaces, for Y(z) independent of Z given (theta, X); and the
+    measurement model as a latent regression theta_j ~ N(x_j'gamma, 1).
+    Omitting the second is Mislevy's (1991) conditioning-model bias, the
+    reason NAEP conditions plausible values on everything downstream.
+    Blocking for real use.
+
+  missing-responses: as_response_matrix() hard-errors on NA, and every
+    real response matrix has some. mirt/TAM/ltm drop the missing (i, j)
+    terms under MAR by default. Needs a mask in the C++ item loop
+    (IrtLogpGrad::operator()) and in the R Metropolis ratio. Blocking for
+    real use.
+
+  coverage-study: the package's one claim is that its interval covers,
+    and nothing checks it over replications. The recorded verifications
+    are single replicates, and the tinytest recovery gates are wide bands
+    that a badly biased estimator passes. Wants 200+ replicates at the
+    motivating DGP reporting bias/RMSE/coverage against three
+    comparators: naive difference in means, sum-score-adjusted BART (the
+    weaker-assumption baseline a referee asks for first), and the
+    colleague's Stan model. Would also settle whether the attenuation
+    seen at 10-20 items is real or Monte Carlo noise. Belongs outside the
+    test suite - too slow to gate on.
+
+  measurement-diagnostics: nothing reports whether the measurement model
+    - which is what does the causal identifying - actually fits. Wants a
+    posterior predictive check on the item-score distribution, an item
+    fit statistic (S-X^2, Orlando and Thissen 2000), a local dependence
+    check (Yen's Q3), and empirical reliability, which is one line given
+    keep_theta. Also a warning for zero-variance items, whose likelihood
+    is monotone in beta and held only by the prior. Related:
+    cut-diagnostic below.
+
+  cut-diagnostic: theta's full conditional includes the outcome and
+    assignment likelihoods, so y and z inform the latent trait. This is
+    the joint-vs-cut question (Zigler et al. 2013 for the causal case;
+    Plummer 2015 for feedback generally). Joint is defended for the y
+    term - two-stage plug-in is attenuated, per Mislevy - but the z term
+    is the one Zigler recommends cutting, and if assignment depends on
+    theta AND something unmeasured, theta absorbs it and the measurement
+    model is silently distorted. Cheap diagnostic: report item
+    parameters from an items-only irt_item_sampler run alongside the
+    joint fit; material movement means the outcome model is driving the
+    measurement model. A cut = TRUE option (drop the y/z terms from
+    theta's ratio) is a couple of lines and gives the modular comparator.
+
+  bart-hyperparameters: dbarts::dbarts() is called with `control` only,
+    so k, power, base, and the sigma prior sit at defaults and cannot be
+    reached. k governs how much the treatment effect is shrunk and is the
+    first knob a careful user wants; dbarts and bartCause both expose it.
+    Pure pass-through. Also worth returning pnorm(assignment_fitted),
+    which is computed every scan and discarded - it is a free overlap
+    diagnostic, and bartCause reports common support.
+
+  item-models: dichotomous 2PL only. No graded-response or partial-credit
+    for Likert items, which rules out most psychosocial instruments; no
+    3PL guessing, which matters for the multiple-choice achievement tests
+    this is aimed at; no Rasch (alpha fixed at 1), which would be the
+    identification-cleanest option and is trivial. Priors are also
+    effectively fixed - alpha ~ Exp(1) is hard-coded in bairrtt_types.h
+    and beta_sd is the only settable one.
+
+  walnuts-reparameterization: the WALNUTS block samples (log alpha, beta),
+    where cor(alpha_i, beta_i) is about -0.73 - a hyperbola a diagonal
+    inverse mass cannot precondition. alpha*beta already has ESS 2582
+    against beta's 138, so the ridge is an artifact of the coordinates.
+    Slope-intercept (log alpha, -alpha*beta) should buy 2-3x on the item
+    parameters; measured ceiling with theta held fixed says ate would NOT
+    move, so this is item-parameter precision only. C++ change in
+    bairrtt_types.h with a re-derived gradient, gated by the
+    finite-difference check in test-engine.R. Unmeasured in the full
+    sampler - prototype before committing.
+
   estimand-surface: irt_causal_bart() returns only the population ATE,
     accumulated per scan. The per-person f(1, theta) - f(0, theta)
     surface is already computed and discarded, so CATE/ICATE draws and
@@ -30,3 +106,17 @@ items
     Revisit if K grows or the traits are ever given a correlated prior,
     where component-wise moves would fight the correlation.
     consumer-gated.
+
+negative findings
+  sampler tuning: measured on 300 persons x 30 items, 4 chains, and
+    ruled out. Per-person Robbins-Monro adaptation of theta_sd is WORSE
+    than the shared scalar (ate ESS down in 3/3 seeds); the adapted
+    per-person SDs span only 0.68-1.04 at the deciles around the shared
+    0.82, so the scalar is not badly wrong for anyone. n_burnin above 500
+    buys nothing. warmup_start at 50/125/400 and n_trees at 25/75/200
+    show no consistent ESS ordering. theta_accept_target 0.234 and 0.65
+    are both worse than 0.44. The empty-leaf install rejects under 1% of
+    moves, so tree/theta coupling is not the bottleneck. What IS finite
+    is ESS, limited by the per-item alpha-beta ridge (see
+    walnuts-reparameterization) and by the weakly-pinned global
+    location/scale of theta.

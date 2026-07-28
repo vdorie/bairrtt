@@ -34,6 +34,26 @@ a Gibbs loop:
   gradient-based [WALNUTS](https://github.com/bob-carpenter/walnuts) sampler,
   which adapts during burn-in and is then frozen.
 
+## What has to be true
+
+`bairrtt` returns a causal effect only under assumptions it cannot check. They
+are set out in full under "Assumptions" in `?irt_causal_bart`; the three worth
+stating up front:
+
+* **The items must be measured before treatment.** If the responses postdate
+  `z`, `theta` is a mediator or a collider rather than a confounder, and
+  adjusting for it can move the answer in either direction.
+* **`theta` is assumed to be the entire confounder.** There is no covariate
+  argument, so anything not routed through the latent trait is unadjusted.
+* **The measurement model does the identifying**, so misspecifying it is not
+  benign. Fewer or noisier items attenuate the estimate toward zero, and
+  residual confounding from a mismeasured adjustment variable is not guaranteed
+  to be conservative in direction.
+
+A comparator worth running: put the sum score, or the raw responses, straight
+into the outcome surface. That needs weaker assumptions than the 2PL, and if the
+two disagree the measurement model is doing the work and deserves scrutiny.
+
 ## Simulate data
 
 `simulate_irt_causal()` draws from this model. Treatment depends on `theta`, so

@@ -69,7 +69,11 @@ move person j's whole trait vector as a single accept/reject unit; if
 component-wise mixing turns out to be poor, the remedy is multi-column support
 in dbarts (TODO `theta-block-move`), which should not be opened speculatively.
 
-## Identification
+## Measurement identification
+
+This section is about the psychometric identification of the loadings - rotation
+and reflection - not about causal identification of the treatment effect. For
+the latter see the "Assumptions" section of `?irt_causal_bart`.
 
 The motivating model has **disjoint item banks** - each item loads on exactly
 one trait. That is the identified case: within a bank, `alpha > 0` fixes the
