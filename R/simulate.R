@@ -29,11 +29,19 @@
 #' @param ate True (constant) treatment effect.
 #' @param prognostic Coefficient of each trait in the outcome model. Length 1
 #'   (recycled) or `n_traits`.
+#' @param n_covariates Number of observed covariates. At `0` (the default) no
+#'   covariates are drawn and the return value is as before.
+#' @param covariate_effect Coefficient of each covariate. Length 1 (recycled) or
+#'   `n_covariates`. The same coefficients shift the trait, the assignment, and
+#'   the outcome, so a fit that ignores `x` is misspecified in the measurement
+#'   model and both surfaces at once --- which is what makes it a fair test of
+#'   `irt_causal_bart()`'s `x` argument.
 #' @param seed Optional integer seed; if supplied, set before drawing.
 #'
 #' @return A list with the observed data --- `responses`, `y`, `z` --- and the
 #'   ground truth: `theta`, item discriminations `alpha`, item difficulties
-#'   `beta`, `prognostic`, and `ate`. At `n_traits = 1`, `responses` is an
+#'   `beta`, `prognostic`, `ate`, and --- when `n_covariates > 0` --- the
+#'   covariates `x` and their coefficients `gamma`. At `n_traits = 1`, `responses` is an
 #'   `n_persons` x `n_items` 0/1 matrix, `theta` a length-`n_persons` vector,
 #'   and `alpha`/`beta` length-`n_items` vectors. At `n_traits > 1`, `responses`
 #'   is a length-`K` list of response matrices, `theta` an `n_persons` x `K`
@@ -61,6 +69,8 @@ simulate_irt_causal <- function(
   n_traits = 1L,
   ate = -0.2,
   prognostic = 1,
+  n_covariates = 0L,
+  covariate_effect = 1,
   seed = NULL
 ) {
   if (!is.null(seed)) {
@@ -86,8 +96,31 @@ simulate_irt_causal <- function(
     stop("'prognostic' must have length 1 or 'n_traits' = ", n_traits)
   }
 
-  # standard-normal population abilities, one column per trait
-  theta <- matrix(rnorm(n_persons * n_traits), n_persons, n_traits)
+  n_covariates <- as.integer(n_covariates)
+  if (length(n_covariates) != 1L || is.na(n_covariates) || n_covariates < 0L) {
+    stop("'n_covariates' must be a single integer >= 0")
+  }
+  covariate_effect <- as.double(covariate_effect)
+  if (length(covariate_effect) == 1L) {
+    covariate_effect <- rep(covariate_effect, max(n_covariates, 1L))
+  }
+  if (n_covariates > 0L && length(covariate_effect) != n_covariates) {
+    stop("'covariate_effect' must have length 1 or 'n_covariates'")
+  }
+
+  # Observed covariates confound in their own right AND shift the trait, so a
+  # fit that ignores them is misspecified in both places at once.
+  x <- if (n_covariates > 0L) {
+    matrix(rnorm(n_persons * n_covariates), n_persons, n_covariates)
+  } else {
+    NULL
+  }
+  gamma <- if (n_covariates > 0L) covariate_effect else NULL
+  x_shift <- if (n_covariates > 0L) as.vector(x %*% gamma) else 0
+
+  # abilities: standard normal around the latent regression mean, one column
+  # per trait. With no covariates this is the plain N(0, 1) population.
+  theta <- matrix(rnorm(n_persons * n_traits), n_persons, n_traits) + x_shift
 
   beta <- vector("list", n_traits) # item difficulty, per bank
   alpha <- vector("list", n_traits) # item discrimination, per bank
@@ -109,8 +142,12 @@ simulate_irt_causal <- function(
 
   # Potential outcomes with a constant treatment effect; treatment depends on
   # every trait, so every trait is a confounder.
-  z <- rbinom(n_persons, 1, plogis(as.vector(theta %*% rep(1, n_traits))))
-  mu <- as.vector(theta %*% prognostic)
+  z <- rbinom(
+    n_persons,
+    1,
+    plogis(as.vector(theta %*% rep(1, n_traits)) + x_shift)
+  )
+  mu <- as.vector(theta %*% prognostic) + x_shift
   y1 <- mu + ate + rnorm(n_persons)
   y0 <- mu + rnorm(n_persons)
   y <- ifelse(z == 1, y1, y0)
@@ -127,7 +164,9 @@ simulate_irt_causal <- function(
     responses = responses,
     y = y,
     z = z,
+    x = x,
     theta = theta,
+    gamma = gamma,
     alpha = alpha,
     beta = beta,
     prognostic = prognostic,

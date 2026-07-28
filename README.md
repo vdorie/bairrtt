@@ -56,6 +56,21 @@ quantile(fit$ate, c(0.025, 0.975))  # 95% credible interval
 See `vignette("bairrtt")` for a walk-through, including recovery of the item
 parameters and the WALNUTS item sampler on its own.
 
+## Observed covariates
+
+`theta` is rarely the only confounder. Pass `x` and it enters both BART surfaces
+*and* the measurement model, as a latent regression `theta ~ N(x'gamma, 1)`:
+
+```r
+fit <- irt_causal_bart(sim$responses, sim$y, sim$z, x = sim$x, seed = 1)
+colMeans(extract(fit, "gamma"))    # latent-regression coefficients
+```
+
+Both places matter. Covariates in the surfaces alone would leave the
+conditioning model short, shrinking the trait-covariate relationships the model
+is being asked about. The `gamma` coefficients are *conditioning* coefficients,
+not structural effects of `x` on the trait.
+
 ## Several latent traits
 
 More than one trait can confound the same treatment and outcome, each measured

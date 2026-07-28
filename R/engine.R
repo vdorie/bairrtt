@@ -224,6 +224,40 @@ as_response_banks <- function(responses) {
   banks
 }
 
+# Observed covariates as a data frame, or NULL. Kept as a frame rather than a
+# matrix so dbarts sees factors as factors; the latent regression takes
+# model.matrix() of the same frame.
+as_covariate_frame <- function(x, n_persons, n_traits) {
+  if (is.null(x)) {
+    return(NULL)
+  }
+  if (is.matrix(x) || is.vector(x)) {
+    x <- as.data.frame(x)
+  }
+  if (!is.data.frame(x)) {
+    stop("'x' must be a matrix, data frame, or NULL")
+  }
+  if (nrow(x) != n_persons) {
+    stop("'x' must have n_persons = ", n_persons, " rows")
+  }
+  if (ncol(x) == 0L) {
+    return(NULL)
+  }
+  if (anyNA(x)) {
+    stop("'x' must not contain NA")
+  }
+  # A name collision would silently shadow a trait column in the BART frames.
+  reserved <- c("y", "z", "theta", paste0("theta", seq_len(n_traits)))
+  clash <- intersect(names(x), reserved)
+  if (length(clash) > 0L) {
+    stop(
+      "'x' must not use the reserved column name(s) ",
+      paste(sQuote(clash), collapse = ", ")
+    )
+  }
+  x
+}
+
 # The trait columns as a data frame, for dbarts()'s and predict()'s interfaces.
 trait_frame <- function(theta, theta_names) {
   out <- as.data.frame(theta)

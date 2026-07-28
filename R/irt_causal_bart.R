@@ -20,6 +20,8 @@
 #'   adapting during burn-in, then frozen for the sampling phase. Conditional on
 #'   the traits the banks are independent, so this is one sampler per bank, not
 #'   one larger one.
+#' * With covariates, the latent-regression coefficients `gamma` are drawn from
+#'   their exact (conjugate normal) full conditional.
 #'
 #' The treatment-effect estimand `E[f(1, theta) - f(0, theta)]` is accumulated
 #' from the response surface each sampling scan.
@@ -34,9 +36,10 @@
 #'   conditioning on it can move the estimate in either direction. This is the
 #'   assumption most easily violated in practice and the one with the worst
 #'   consequences.
-#' * **`theta` is the whole confounder.** The model contains no observed
-#'   covariates, so it assumes `Y(z)` is independent of `Z` given the latent
-#'   trait(s) alone. Any confounding not routed through `theta` is unadjusted.
+#' * **`(theta, x)` is the whole confounder.** `Y(z)` must be independent of `Z`
+#'   given the latent trait(s) and whatever is passed as `x`. Confounding routed
+#'   through neither is unadjusted, and with `x = NULL` that means the trait
+#'   alone is being asked to carry all of it.
 #' * **Overlap:** `0 < P(Z = 1 | theta) < 1` across the support of `theta`.
 #' * **Exclusion:** the item responses are pure measures of `theta`, with no
 #'   direct path to `y` or `z`. Differential item functioning by treatment group
@@ -63,6 +66,15 @@
 #'   may differ in item count but must cover the same persons in the same order.
 #' @param y Numeric outcome, length `n_persons`.
 #' @param z Binary (0/1) treatment, length `n_persons`.
+#' @param x Optional observed covariates: a matrix or data frame with
+#'   `n_persons` rows, or `NULL` for none. A data frame may contain factors,
+#'   which \pkg{dbarts} handles directly. They enter in two places, both
+#'   necessary: the outcome and assignment surfaces, so that the adjustment set
+#'   is `(theta, x)`; and the measurement model as a latent regression
+#'   `theta_j ~ N(x_j' gamma, 1)`. Omitting the second would shrink the very
+#'   trait-covariate relationships the model is being asked about --- Mislevy's
+#'   (1991) conditioning-model bias. There is deliberately one `x` for all
+#'   three; see `docs/design/covariates.md`.
 #' @param n_burnin Number of burn-in scans. During burn-in the proposal SD is
 #'   adapted and empty-leaf `theta` moves are collapsed rather than rejected.
 #' @param n_sampling Number of kept scans.
@@ -77,6 +89,8 @@
 #'   `n_burnin`, otherwise the item samplers would never adapt; if it is not, it
 #'   is reduced to `n_burnin %/% 2` with a warning.
 #' @param beta_sd Prior standard deviation for the IRT item difficulties.
+#' @param gamma_sd Prior standard deviation for the latent-regression
+#'   coefficients. Ignored when `x` is `NULL`.
 #' @param step_size Initial WALNUTS leapfrog step size.
 #' @param n_theta_cutpoints Number of cut points for each trait predictor in
 #'   each BART model (interior quantiles of a standard normal).
@@ -116,6 +130,10 @@
 #'     \item{`alpha`, `beta`}{`n_sampling` x `n_chains` x `n_items` arrays of
 #'       item-parameter draws; with more than one trait, a list of one such
 #'       array per bank.}
+#'     \item{`gamma`}{`n_sampling` x `n_chains` x `ncol(model.matrix(x))` array
+#'       of latent-regression draws (intercept first), or `NULL` with no `x`.
+#'       These are *conditioning* coefficients, not structural effects of `x` on
+#'       the trait, and should not be read as the latter.}
 #'     \item{`sigma`}{`n_sampling` x `n_chains` matrix of response residual SD
 #'       draws.}
 #'     \item{`theta`}{`n_sampling` x `n_chains` x `n_persons` array of `theta`
@@ -160,12 +178,14 @@ irt_causal_bart <- function(
   responses,
   y,
   z,
+  x = NULL,
   n_burnin = 500L,
   n_sampling = 2000L,
   theta_sd = 0.6,
   theta_accept_target = 0.44,
   warmup_start = 125L,
   beta_sd = 10,
+  gamma_sd = 5,
   step_size = 0.1,
   n_theta_cutpoints = 100L,
   n_trees = 75L,
@@ -194,6 +214,24 @@ irt_causal_bart <- function(
   }
   if (anyNA(z) || any(z != 0 & z != 1)) {
     stop("'z' must be a 0/1 treatment indicator")
+  }
+  # One x for all three places it is needed: both BART surfaces and the latent
+  # regression. x_frame goes to dbarts, which builds its own design matrix and
+  # handles factors; x_design is the numeric one the conjugate gamma block uses.
+  x_frame <- as_covariate_frame(x, n_persons, n_traits)
+  x_design <- if (is.null(x_frame)) {
+    NULL
+  } else {
+    stats::model.matrix(~., x_frame)
+  }
+  x_names <- if (is.null(x_frame)) character(0L) else names(x_frame)
+  if (
+    !is.numeric(gamma_sd) ||
+      length(gamma_sd) != 1L ||
+      is.na(gamma_sd) ||
+      gamma_sd <= 0
+  ) {
+    stop("'gamma_sd' must be a single positive number")
   }
   n_burnin <- as.integer(n_burnin)
   n_sampling <- as.integer(n_sampling)
@@ -302,12 +340,16 @@ irt_causal_bart <- function(
     banks = banks,
     y = y,
     z = z,
+    x_frame = x_frame,
+    x_design = x_design,
+    x_names = x_names,
     n_burnin = n_burnin,
     n_sampling = n_sampling,
     theta_sd = theta_sd,
     theta_accept_target = theta_accept_target,
     warmup_start = warmup_start,
     beta_sd = beta_sd,
+    gamma_sd = gamma_sd,
     step_size = step_size,
     n_theta_cutpoints = n_theta_cutpoints,
     n_trees = n_trees,
@@ -326,7 +368,13 @@ irt_causal_bart <- function(
   } else {
     run_chains(spec, seeds, n_cores)
   }
-  new_irt_causal_fit(chains, seeds, n_traits, n_items, match.call())
+  new_irt_causal_fit(
+    chains,
+    seeds,
+    n_traits,
+    n_items,
+    abbreviate_call(match.call())
+  )
 }
 
 # One chain. Assumes validated, normalized inputs; irt_causal_bart() is the only
@@ -338,12 +386,16 @@ irt_causal_bart_chain <- function(
   banks,
   y,
   z,
+  x_frame,
+  x_design,
+  x_names,
   n_burnin,
   n_sampling,
   theta_sd,
   theta_accept_target,
   warmup_start,
   beta_sd,
+  gamma_sd,
   step_size,
   n_theta_cutpoints,
   n_trees,
@@ -369,10 +421,18 @@ irt_causal_bart_chain <- function(
     n.trees = as.integer(n_trees)
   )
 
-  # --- response surface (BART): y ~ f(z, theta) ---------------------------
+  # Trait columns plus any covariates, in the layout both BART models take. The
+  # covariates are static for the whole run; only the trait columns are ever
+  # updated, so the empty-leaf install machinery is unaffected by them.
+  model_frame <- function(theta) {
+    traits <- trait_frame(theta, theta_names)
+    if (is.null(x_frame)) traits else cbind(traits, x_frame)
+  }
+
+  # --- response surface (BART): y ~ f(z, theta, x) ------------------------
   response_model <- dbarts::dbarts(
-    reformulate(c("z", theta_names), response = "y"),
-    data.frame(y = y, z = z, trait_frame(theta, theta_names)),
+    reformulate(c("z", theta_names, x_names), response = "y"),
+    data.frame(y = y, z = z, model_frame(theta)),
     control = control
   )
   for (nm in theta_names) {
@@ -381,10 +441,10 @@ irt_causal_bart_chain <- function(
   response_model$sampleTreesFromPrior()
   response_samples <- response_model$run(5L, 1L)
 
-  # --- assignment model (BART): z ~ f(theta) ------------------------------
+  # --- assignment model (BART): z ~ f(theta, x) ---------------------------
   assignment_model <- dbarts::dbarts(
-    reformulate(theta_names, response = "z"),
-    data.frame(z = z, trait_frame(theta, theta_names)),
+    reformulate(c(theta_names, x_names), response = "z"),
+    data.frame(z = z, model_frame(theta)),
     control = control
   )
   for (nm in theta_names) {
@@ -398,6 +458,19 @@ irt_causal_bart_chain <- function(
   # independent sampler over its own response matrix.
   alpha <- lapply(n_items, function(p) rep(1, p)) # discrimination (positive)
   beta <- lapply(n_items, function(p) rnorm(p)) # difficulty
+
+  # Latent regression theta_k ~ N(x'gamma_k, 1). With no covariates gamma is
+  # absent and theta_mean is 0, which is exactly the previous N(0, 1) prior --
+  # dnorm(mean = 0) is what dnorm() already defaulted to.
+  n_gamma <- if (is.null(x_design)) 0L else ncol(x_design)
+  gamma <- lapply(seq_len(n_traits), function(k) numeric(n_gamma))
+  theta_mean <- lapply(seq_len(n_traits), function(k) 0)
+  # x is fixed for the whole run, so the posterior precision is too
+  gamma_chol <- if (n_gamma > 0L) {
+    chol(crossprod(x_design) + diag(1 / gamma_sd^2, n_gamma))
+  } else {
+    NULL
+  }
   ab_sampler <- lapply(seq_len(n_traits), function(k) {
     irt_item_sampler(
       banks[[k]],
@@ -424,6 +497,11 @@ irt_causal_bart_chain <- function(
   ate_draws <- numeric(n_sampling)
   alpha_draws <- lapply(n_items, function(p) matrix(NA_real_, n_sampling, p))
   beta_draws <- lapply(n_items, function(p) matrix(NA_real_, n_sampling, p))
+  gamma_draws <- if (n_gamma > 0L) {
+    lapply(seq_len(n_traits), function(k) matrix(NA_real_, n_sampling, n_gamma))
+  } else {
+    NULL
+  }
   sigma_draws <- numeric(n_sampling)
   theta_draws <- if (keep_theta) {
     lapply(seq_len(n_traits), function(k) {
@@ -462,7 +540,7 @@ irt_causal_bart_chain <- function(
       theta_prop_k <- theta_old_k + rnorm(n_persons, sd = theta_sd)
       theta_prop <- theta
       theta_prop[, k] <- theta_prop_k
-      prop_frame <- trait_frame(theta_prop, theta_names)
+      prop_frame <- model_frame(theta_prop)
 
       response_prop <- response_model$predict(
         data.frame(z = z, prop_frame)
@@ -488,11 +566,11 @@ irt_causal_bart_chain <- function(
       lr <- (irt_ll_prop +
         dnorm(y, response_prop, response_samples$sigma, log = TRUE) +
         pnorm((2 * z - 1) * assignment_prop, log.p = TRUE) +
-        dnorm(theta_prop_k, log = TRUE)) -
+        dnorm(theta_prop_k, mean = theta_mean[[k]], log = TRUE)) -
         (irt_ll_cur +
           dnorm(y, fitted_cur, response_samples$sigma, log = TRUE) +
           pnorm((2 * z - 1) * assignment_cur, log.p = TRUE) +
-          dnorm(theta_old_k, log = TRUE))
+          dnorm(theta_old_k, mean = theta_mean[[k]], log = TRUE))
 
       accept <- !is.na(lr) & (-rexp(n_persons)) <= lr
       theta[accept, k] <- theta_prop_k[accept]
@@ -531,7 +609,7 @@ irt_causal_bart_chain <- function(
       # "current" BART terms have to be re-read at the updated theta. Skipped
       # for the last trait (and so entirely when there is only one).
       if (k < n_traits) {
-        cur_frame <- trait_frame(theta, theta_names)
+        cur_frame <- model_frame(theta)
         fitted_cur <- response_model$predict(data.frame(z = z, cur_frame))
         assignment_cur <- assignment_model$predict(cur_frame)
       }
@@ -579,10 +657,32 @@ irt_causal_bart_chain <- function(
       }
     }
 
+    ## --- gamma | theta, x: the latent regression --------------------------
+    # theta_k ~ N(x'gamma_k, 1) with gamma_k ~ N(0, gamma_sd^2 I) is conjugate,
+    # so this block is an exact draw rather than a Metropolis step. The residual
+    # SD stays fixed at 1: that, not the marginal variance, is what identifies
+    # the 2PL scale. See docs/design/covariates.md.
+    if (n_gamma > 0L) {
+      for (k in seq_len(n_traits)) {
+        # precision = R'R, so V = R^-1 R'^-1: solve for the mean and add
+        # backsolve(R, z) for the draw, whose covariance is exactly V
+        mean_k <- backsolve(
+          gamma_chol,
+          backsolve(
+            gamma_chol,
+            crossprod(x_design, theta[, k]),
+            transpose = TRUE
+          )
+        )
+        gamma[[k]] <- as.vector(mean_k + backsolve(gamma_chol, rnorm(n_gamma)))
+        theta_mean[[k]] <- as.vector(x_design %*% gamma[[k]])
+      }
+    }
+
     ## --- store draws + treatment-effect estimand --------------------------
     if (sampling_phase) {
       i_draw <- i_sample - n_burnin
-      cur_frame <- trait_frame(theta, theta_names)
+      cur_frame <- model_frame(theta)
       f1 <- response_model$predict(data.frame(
         z = rep(1, n_persons),
         cur_frame
@@ -595,7 +695,10 @@ irt_causal_bart_chain <- function(
       for (k in seq_len(n_traits)) {
         alpha_draws[[k]][i_draw, ] <- alpha[[k]]
         beta_draws[[k]][i_draw, ] <- beta[[k]]
-        if (keep_theta) theta_draws[[k]][i_draw, ] <- theta[, k]
+        if (keep_theta) {
+          theta_draws[[k]][i_draw, ] <- theta[, k]
+        }
+        if (n_gamma > 0L) gamma_draws[[k]][i_draw, ] <- gamma[[k]]
       }
       sigma_draws[i_draw] <- response_samples$sigma[1L]
     }
@@ -619,6 +722,7 @@ irt_causal_bart_chain <- function(
     ate = ate_draws,
     alpha = unwrap(alpha_draws),
     beta = unwrap(beta_draws),
+    gamma = if (is.null(gamma_draws)) NULL else unwrap(gamma_draws),
     sigma = sigma_draws,
     theta = if (keep_theta) unwrap(theta_draws) else NULL,
     theta_accept = theta_accept,

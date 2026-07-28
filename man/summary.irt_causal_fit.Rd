@@ -10,7 +10,7 @@
 \item{object}{An \code{"irt_causal_fit"} from \code{\link[=irt_causal_bart]{irt_causal_bart()}}.}
 
 \item{vars}{Which quantities to summarize: any of \code{"ate"}, \code{"sigma"},
-\code{"alpha"}, \code{"beta"}, and \code{"theta"}.}
+\code{"alpha"}, \code{"beta"}, \code{"gamma"}, and \code{"theta"}.}
 
 \item{...}{Ignored.}
 }

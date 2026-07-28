@@ -47,8 +47,17 @@
   proposal adaptation, and other `n_trees` or `theta_accept_target` settings
   were all measured and bought nothing.
 
+* `irt_causal_bart()` accepts observed covariates via `x`. They enter both BART
+  surfaces, so the adjustment set becomes `(theta, x)`, and the measurement
+  model as a latent regression `theta_j ~ N(x_j' gamma, 1)` --- omitting the
+  latter would shrink exactly the trait-covariate relationships the model is
+  asked about (Mislevy 1991). `gamma` is drawn from its exact conjugate full
+  conditional and returned alongside the other draws. `x = NULL` keeps the
+  previous model and the previous draws.
+
 * `simulate_irt_causal()` generates data from the fitted model, with `n_traits`
-  banks and a per-trait `prognostic` coefficient.
+  banks, a per-trait `prognostic` coefficient, and `n_covariates`
+  covariates that confound through the trait, the assignment, and the outcome.
 
 * Requires dbarts 1.0-0 or newer for
   `dbarts::updatePredictorPerObservationJointly()`, and a C++20 compiler for

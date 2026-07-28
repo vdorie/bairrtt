@@ -10,6 +10,8 @@ simulate_irt_causal(
   n_traits = 1L,
   ate = -0.2,
   prognostic = 1,
+  n_covariates = 0L,
+  covariate_effect = 1,
   seed = NULL
 )
 }
@@ -27,12 +29,22 @@ return value is the single-trait one described below.}
 \item{prognostic}{Coefficient of each trait in the outcome model. Length 1
 (recycled) or \code{n_traits}.}
 
+\item{n_covariates}{Number of observed covariates. At \code{0} (the default) no
+covariates are drawn and the return value is as before.}
+
+\item{covariate_effect}{Coefficient of each covariate. Length 1 (recycled) or
+\code{n_covariates}. The same coefficients shift the trait, the assignment, and
+the outcome, so a fit that ignores \code{x} is misspecified in the measurement
+model and both surfaces at once --- which is what makes it a fair test of
+\code{irt_causal_bart()}'s \code{x} argument.}
+
 \item{seed}{Optional integer seed; if supplied, set before drawing.}
 }
 \value{
 A list with the observed data --- \code{responses}, \code{y}, \code{z} --- and the
 ground truth: \code{theta}, item discriminations \code{alpha}, item difficulties
-\code{beta}, \code{prognostic}, and \code{ate}. At \code{n_traits = 1}, \code{responses} is an
+\code{beta}, \code{prognostic}, \code{ate}, and --- when \code{n_covariates > 0} --- the
+covariates \code{x} and their coefficients \code{gamma}. At \code{n_traits = 1}, \code{responses} is an
 \code{n_persons} x \code{n_items} 0/1 matrix, \code{theta} a length-\code{n_persons} vector,
 and \code{alpha}/\code{beta} length-\code{n_items} vectors. At \code{n_traits > 1}, \code{responses}
 is a length-\code{K} list of response matrices, \code{theta} an \code{n_persons} x \code{K}

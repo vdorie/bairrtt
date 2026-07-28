@@ -64,6 +64,24 @@ run_chains <- function(spec, seeds, n_cores) {
   fits
 }
 
+# A fit is meant to be saved, so its recorded call must not carry the data.
+# Called as irt_causal_bart(responses, y, z) the call holds symbols and is
+# tiny; called through do.call() it holds the closure itself as the head and
+# the actual matrices as arguments, which runs to megabytes. Replace anything
+# that is not a short literal with a placeholder.
+abbreviate_call <- function(cl) {
+  cl[[1L]] <- as.name("irt_causal_bart")
+  for (i in seq_along(cl)[-1L]) {
+    # language objects are expressions like sim$responses -- keep those, they
+    # are what makes the call readable; only inlined values get replaced
+    if (is.language(cl[[i]]) || length(cl[[i]]) <= 1L) {
+      next
+    }
+    cl[[i]] <- as.name(paste0("<", class(cl[[i]])[1L], ">"))
+  }
+  cl
+}
+
 # Stack per-chain results into one object. The chain axis is always present,
 # including at a single chain, so nothing downstream has to branch on chain
 # count -- the cost is that `ate` is an n_sampling x n_chains matrix rather
@@ -80,6 +98,7 @@ new_irt_causal_fit <- function(chains, seeds, n_traits, n_items, call) {
       ate = stack("ate"),
       alpha = stack("alpha"),
       beta = stack("beta"),
+      gamma = stack("gamma"),
       sigma = stack("sigma"),
       theta = stack("theta"),
       theta_accept = stack("theta_accept"),

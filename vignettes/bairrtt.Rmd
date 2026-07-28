@@ -203,6 +203,48 @@ short <- irt_causal_bart(
 summary(short)
 ```
 
+## Observed covariates
+
+The latent trait is rarely the only confounder. `x` adds observed covariates,
+and they enter in two places: both BART surfaces, so the adjustment set becomes
+`(theta, x)`; and the measurement model, as a latent regression
+`theta ~ N(x'gamma, 1)`.
+
+The second is the one that gets forgotten. A conditioning model that omits
+variables the analyst later relates to `theta` shrinks those relationships
+toward zero --- Mislevy's (1991) result, and the reason large-scale assessments
+condition their plausible values on everything downstream.
+
+```{r covariates}
+simx <- simulate_irt_causal(
+  n_persons = 300, n_items = 40, ate = -0.2,
+  n_covariates = 2, covariate_effect = c(1, -0.8), seed = 42
+)
+
+unadjusted <- irt_causal_bart(simx$responses, simx$y, simx$z,
+                              n_burnin = 100, n_sampling = 250, seed = 42)
+adjusted   <- irt_causal_bart(simx$responses, simx$y, simx$z, x = simx$x,
+                              n_burnin = 100, n_sampling = 250, seed = 42)
+
+interval <- function(f) quantile(as.vector(f$ate), c(0.025, 0.975), names = FALSE)
+rbind(unadjusted = interval(unadjusted),
+      adjusted   = interval(adjusted),
+      truth      = rep(simx$ate, 2))
+```
+
+Here `x` confounds directly *and* shifts the trait, so ignoring it is
+misspecified in both places at once and the unadjusted interval misses. The
+latent-regression coefficients come back too:
+
+```{r gamma}
+colMeans(extract(adjusted, "gamma"))   # intercept, then one per covariate
+simx$gamma
+```
+
+Read those as *conditioning* coefficients, not as structural effects of `x` on
+the trait --- they describe the population the traits are being estimated
+within, and are routinely over-interpreted.
+
 ## More than one latent trait
 
 Several traits can confound the same treatment and outcome, each measured by its

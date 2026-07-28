@@ -85,8 +85,8 @@ dbarts::extract
 #' @param ... Ignored.
 #'
 #' @return A vector, matrix, or array as described under `combine_chains`; with
-#'   more than one trait, `alpha`, `beta`, and `theta` come back as a list with
-#'   one element per item bank.
+#'   more than one trait, `alpha`, `beta`, `gamma`, and `theta` come back as a
+#'   list with one element per item bank.
 #'
 #' @examples
 #' sim <- simulate_irt_causal(n_persons = 100, n_items = 15, seed = 1)
@@ -107,6 +107,7 @@ extract.irt_causal_fit <- function(
     "sigma",
     "alpha",
     "beta",
+    "gamma",
     "theta",
     "theta_accept",
     "theta_sd_trace"
@@ -120,8 +121,9 @@ extract.irt_causal_fit <- function(
     stop(
       "'",
       type,
-      "' was not kept by this fit",
-      if (type == "theta") "; refit with keep_theta = TRUE" else ""
+      "' is not present in this fit",
+      if (type == "theta") "; refit with keep_theta = TRUE" else "",
+      if (type == "gamma") "; it needs covariates, so pass 'x'" else ""
     )
   }
   if (!combine_chains) {
@@ -157,7 +159,7 @@ extract.irt_causal_fit <- function(
 #'
 #' @param object An `"irt_causal_fit"` from [irt_causal_bart()].
 #' @param vars Which quantities to summarize: any of `"ate"`, `"sigma"`,
-#'   `"alpha"`, `"beta"`, and `"theta"`.
+#'   `"alpha"`, `"beta"`, `"gamma"`, and `"theta"`.
 #' @param ... Ignored.
 #'
 #' @return An object of class `"summary.irt_causal_fit"`, with the per-variable

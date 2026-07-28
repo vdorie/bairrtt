@@ -8,12 +8,14 @@ irt_causal_bart(
   responses,
   y,
   z,
+  x = NULL,
   n_burnin = 500L,
   n_sampling = 2000L,
   theta_sd = 0.6,
   theta_accept_target = 0.44,
   warmup_start = 125L,
   beta_sd = 10,
+  gamma_sd = 5,
   step_size = 0.1,
   n_theta_cutpoints = 100L,
   n_trees = 75L,
@@ -36,6 +38,16 @@ may differ in item count but must cover the same persons in the same order.}
 
 \item{z}{Binary (0/1) treatment, length \code{n_persons}.}
 
+\item{x}{Optional observed covariates: a matrix or data frame with
+\code{n_persons} rows, or \code{NULL} for none. A data frame may contain factors,
+which \pkg{dbarts} handles directly. They enter in two places, both
+necessary: the outcome and assignment surfaces, so that the adjustment set
+is \verb{(theta, x)}; and the measurement model as a latent regression
+\verb{theta_j ~ N(x_j' gamma, 1)}. Omitting the second would shrink the very
+trait-covariate relationships the model is being asked about --- Mislevy's
+(1991) conditioning-model bias. There is deliberately one \code{x} for all
+three; see \code{docs/design/covariates.md}.}
+
 \item{n_burnin}{Number of burn-in scans. During burn-in the proposal SD is
 adapted and empty-leaf \code{theta} moves are collapsed rather than rejected.}
 
@@ -55,6 +67,9 @@ tuning is not polluted by the not-yet-settled \code{theta}). Must be less than
 is reduced to \code{n_burnin \%/\% 2} with a warning.}
 
 \item{beta_sd}{Prior standard deviation for the IRT item difficulties.}
+
+\item{gamma_sd}{Prior standard deviation for the latent-regression
+coefficients. Ignored when \code{x} is \code{NULL}.}
 
 \item{step_size}{Initial WALNUTS leapfrog step size.}
 
@@ -105,6 +120,10 @@ pooled draws they are. Read it with \code{\link[=extract]{extract()}} and
 \item{\code{alpha}, \code{beta}}{\code{n_sampling} x \code{n_chains} x \code{n_items} arrays of
 item-parameter draws; with more than one trait, a list of one such
 array per bank.}
+\item{\code{gamma}}{\code{n_sampling} x \code{n_chains} x \code{ncol(model.matrix(x))} array
+of latent-regression draws (intercept first), or \code{NULL} with no \code{x}.
+These are \emph{conditioning} coefficients, not structural effects of \code{x} on
+the trait, and should not be read as the latter.}
 \item{\code{sigma}}{\code{n_sampling} x \code{n_chains} matrix of response residual SD
 draws.}
 \item{\code{theta}}{\code{n_sampling} x \code{n_chains} x \code{n_persons} array of \code{theta}
@@ -143,6 +162,8 @@ on that bank's trait by the WALNUTS sampler (\code{\link[=irt_item_sampler]{irt_
 adapting during burn-in, then frozen for the sampling phase. Conditional on
 the traits the banks are independent, so this is one sampler per bank, not
 one larger one.
+\item With covariates, the latent-regression coefficients \code{gamma} are drawn from
+their exact (conjugate normal) full conditional.
 }
 
 The treatment-effect estimand \code{E[f(1, theta) - f(0, theta)]} is accumulated
@@ -159,9 +180,10 @@ strong, and the package cannot check any of them.
 conditioning on it can move the estimate in either direction. This is the
 assumption most easily violated in practice and the one with the worst
 consequences.
-\item \strong{\code{theta} is the whole confounder.} The model contains no observed
-covariates, so it assumes \code{Y(z)} is independent of \code{Z} given the latent
-trait(s) alone. Any confounding not routed through \code{theta} is unadjusted.
+\item \strong{\verb{(theta, x)} is the whole confounder.} \code{Y(z)} must be independent of \code{Z}
+given the latent trait(s) and whatever is passed as \code{x}. Confounding routed
+through neither is unadjusted, and with \code{x = NULL} that means the trait
+alone is being asked to carry all of it.
 \item \strong{Overlap:} \verb{0 < P(Z = 1 | theta) < 1} across the support of \code{theta}.
 \item \strong{Exclusion:} the item responses are pure measures of \code{theta}, with no
 direct path to \code{y} or \code{z}. Differential item functioning by treatment group

@@ -9,16 +9,6 @@ planning/implementation/review process is docs/plans/README.md.
 Seeded 2026-07-27 from the state of the initial import; prune freely.
 
 items
-  covariates: irt_causal_bart() takes no observed covariates - the
-    outcome model is reformulate(c("z", theta_names)) and nothing else -
-    so it assumes the latent trait is the ENTIRE confounder, which no
-    applied study satisfies. Needed in two places, and both matter: the
-    BART surfaces, for Y(z) independent of Z given (theta, X); and the
-    measurement model as a latent regression theta_j ~ N(x_j'gamma, 1).
-    Omitting the second is Mislevy's (1991) conditioning-model bias, the
-    reason NAEP conditions plausible values on everything downstream.
-    Blocking for real use.
-
   missing-responses: as_response_matrix() hard-errors on NA, and every
     real response matrix has some. mirt/TAM/ltm drop the missing (i, j)
     terms under MAR by default. Needs a mask in the C++ item loop

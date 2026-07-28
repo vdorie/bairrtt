@@ -6,7 +6,8 @@
 \usage{
 \method{extract}{irt_causal_fit}(
   object,
-  type = c("ate", "sigma", "alpha", "beta", "theta", "theta_accept", "theta_sd_trace"),
+  type = c("ate", "sigma", "alpha", "beta", "gamma", "theta", "theta_accept",
+    "theta_sd_trace"),
   combine_chains = TRUE,
   ...
 )
@@ -25,8 +26,8 @@ a per-draw vector as a \code{(n_sampling * n_chains)} x \code{n_par} matrix. If
 }
 \value{
 A vector, matrix, or array as described under \code{combine_chains}; with
-more than one trait, \code{alpha}, \code{beta}, and \code{theta} come back as a list with
-one element per item bank.
+more than one trait, \code{alpha}, \code{beta}, \code{gamma}, and \code{theta} come back as a
+list with one element per item bank.
 }
 \description{
 Method for \pkg{dbarts}'s \code{extract()} generic, so a \code{bairrtt} fit is read the
