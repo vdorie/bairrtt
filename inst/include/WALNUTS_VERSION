@@ -19,13 +19,19 @@ config, sampler, util); the rest are byte-identical.
 API drift vs that snapshot, and why none of it reaches bairrtt:
   - adapt.hpp / sampler.hpp / api.hpp: upstream unified the threaded
     adaptation and sampling drivers - AdaptWorker and ChainWorker lost
-    ctor arguments, both controller_loop()s now take the config object
-    instead of loose tolerances, and detail::sample() was resigned to
-    take SamplingConfig directly. All of it is the MULTI-CHAIN driver
-    (detail::adapt, detail::sample, walnuts::sample). bairrtt drives
-    AdaptiveWalnuts one chain at a time from src/irt_hmc.cpp and never
-    enters that path. The detail::Buffer alias adapt.hpp used to export
-    is gone; bairrtt never named it.
+    ctor arguments; sampler.hpp's controller_loop() now takes
+    SamplingConfig instead of loose tolerances, while adapt.hpp's lost
+    its `latest` out-parameter and builds the vector itself; and
+    detail::sample() was resigned to take SamplingConfig directly. Two
+    semantic changes ride along: adapt.hpp's final publish became
+    unconditional, and both loops' max-iteration test moved from a
+    per-chain minimum to a cross-chain sum. All of it is the MULTI-CHAIN
+    driver (detail::adapt, detail::sample, walnuts::walnuts). bairrtt
+    drives AdaptiveWalnuts one chain at a time from src/irt_hmc.cpp and
+    never enters that path - in fact none of these three headers is even
+    in the transitive include closure of bairrtt_types.h, so they are
+    never preprocessed into the build. The detail::Buffer alias adapt.hpp
+    used to export is gone; bairrtt never named it.
   - util.hpp / config.hpp: new detail::leapfrog_error() and
     detail::adapt_step(), plus InitConfigBuilder::adapt_step_build(),
     a heuristic initial-step-size search. Purely additive. bairrtt

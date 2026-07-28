@@ -20,6 +20,14 @@ generates data from the model for testing and examples. The WALNUTS
 item-parameter sampler is exported on its own via \code{\link[=irt_item_sampler]{irt_item_sampler()}} and
 friends.
 }
+\seealso{
+Useful links:
+\itemize{
+  \item \url{https://github.com/vdorie/bairrtt}
+  \item Report bugs at \url{https://github.com/vdorie/bairrtt/issues}
+}
+
+}
 \author{
 \strong{Maintainer}: Vincent Dorie \email{vincent.dorie@georgetown.edu} [copyright holder]
 

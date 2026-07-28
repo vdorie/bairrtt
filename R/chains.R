@@ -9,11 +9,7 @@
 # give identical draws.
 run_chains <- function(spec, seeds, n_cores) {
   n_chains <- length(seeds)
-  n_cores <- as.integer(n_cores)
-  if (length(n_cores) != 1L || is.na(n_cores) || n_cores < 1L) {
-    stop("'n_cores' must be a single integer >= 1")
-  }
-  n_cores <- min(n_cores, n_chains)
+  n_cores <- min(n_cores, n_chains) # validated in irt_causal_bart()
   forkable <- n_cores > 1L && .Platform$OS.type != "windows"
   if (n_cores > 1L && !forkable) {
     message(
@@ -31,20 +27,38 @@ run_chains <- function(spec, seeds, n_cores) {
     )
   }
   fits <- if (forkable) {
-    parallel::mclapply(seq_len(n_chains), one, mc.cores = n_cores)
+    # mc.preschedule = FALSE gives each chain its own process, so a worker that
+    # dies takes one chain down rather than its whole prescheduled batch. With
+    # a handful of long-running chains the extra forks cost nothing.
+    parallel::mclapply(
+      seq_len(n_chains),
+      one,
+      mc.cores = n_cores,
+      mc.preschedule = FALSE
+    )
   } else {
     lapply(seq_len(n_chains), one)
   }
 
-  # mclapply() returns a worker error as a try-error element rather than
-  # raising it, so a silent partial result is the default. Refuse that.
-  failed <- which(vapply(fits, inherits, logical(1L), what = "try-error"))
+  # mclapply() never raises: a worker that ERRORS comes back as a try-error,
+  # and a worker that DIES (segfault in dbarts or WALNUTS, OOM kill) comes back
+  # as a plain NULL with only a warning. Both are silent partial results, and
+  # NULL is the more dangerous one -- it recycles through array() downstream
+  # without even a warning. Refuse both.
+  died <- vapply(fits, is.null, logical(1L))
+  errored <- vapply(fits, inherits, logical(1L), what = "try-error")
+  failed <- which(died | errored)
   if (length(failed) > 0L) {
+    detail <- if (errored[failed[1L]]) {
+      conditionMessage(attr(fits[[failed[1L]]], "condition"))
+    } else {
+      "the worker process died without returning a result"
+    }
     stop(
       "chain(s) ",
       paste(failed, collapse = ", "),
       " failed: ",
-      conditionMessage(attr(fits[[failed[1L]]], "condition"))
+      detail
     )
   }
   fits
@@ -229,13 +243,23 @@ z_scale <- function(m) {
 
 # The classic Gelman-Rubin between/within statistic, on already-transformed
 # draws.
+#
+# Zero within-chain variance is two opposite situations and they must not be
+# conflated. If the chains also agree, the quantity is constant and R-hat is
+# undefined (NA). If they sit at DIFFERENT values, every chain is frozen
+# somewhere else -- the loudest non-convergence there is -- and R-hat is
+# infinite. Returning NA for the second hides it, and irt_rhat()'s na.rm then
+# drops it out of the reported maximum entirely.
 rhat_basic <- function(m) {
   n <- nrow(m)
   within <- mean(apply(m, 2L, stats::var))
-  if (!is.finite(within) || within <= 0) {
+  between <- n * stats::var(colMeans(m))
+  if (!is.finite(within) || !is.finite(between)) {
     return(NA_real_)
   }
-  between <- n * stats::var(colMeans(m))
+  if (within <= 0) {
+    return(if (between > 0) Inf else NA_real_)
+  }
   sqrt((between / within + n - 1) / n)
 }
 

@@ -31,6 +31,20 @@ expect_true(is.na(rhat_matrix(matrix(3, 100L, 4L)))) # constant: undefined
 expect_true(is.na(rhat_matrix(matrix(rnorm(6), 3L, 2L)))) # too few draws
 expect_true(is.na(rhat_matrix(matrix(c(NA, rnorm(39)), 10L, 4L)))) # NA
 
+# Every chain frozen at a DIFFERENT value is the loudest non-convergence there
+# is, and must not be conflated with the constant case above. R-hat is infinite,
+# not undefined. (At two chains the folded half of the statistic collapses to a
+# constant and returns NA, which is what posterior::rhat does too.)
+for (k in 3:5) {
+  stuck <- matrix(rep(seq_len(k), each = 20L), 20L, k)
+  expect_true(is.infinite(rhat_matrix(stuck)))
+  if (requireNamespace("posterior", quietly = TRUE)) {
+    expect_equal(rhat_matrix(stuck), posterior::rhat(stuck))
+  }
+}
+# and it must survive into the reported maximum rather than being dropped
+expect_true(is.infinite(max(c(1.01, Inf, NA), na.rm = TRUE)))
+
 # agreement with the reference implementation, to the last bit
 if (requireNamespace("posterior", quietly = TRUE)) {
   set.seed(2)
@@ -136,11 +150,57 @@ expect_equal(lengths(rh2$alpha), c(10L, 14L))
 expect_equal(lengths(rh2$theta), c(120L, 120L))
 expect_true(is.finite(rh2$max))
 
+# With two banks a chain consumes seeds[i] .. seeds[i] + 1, so seeds one apart
+# overlap and two chains would share a WALNUTS stream. Distinctness alone is
+# not enough; the blocks have to be disjoint.
+expect_error(irt_causal_bart(
+  sim2$responses,
+  sim2$y,
+  sim2$z,
+  n_burnin = 5L,
+  n_sampling = 5L,
+  warmup_start = 2L,
+  n_chains = 3L,
+  seeds = c(1L, 2L, 3L)
+))
+# spaced by n_traits, the same seeds are fine
+expect_silent(irt_causal_bart(
+  sim2$responses,
+  sim2$y,
+  sim2$z,
+  n_burnin = 5L,
+  n_sampling = 5L,
+  warmup_start = 2L,
+  n_chains = 3L,
+  seeds = c(1L, 3L, 5L)
+))
+
 # --- argument checks ---------------------------------------------------------
 expect_error(do.call(irt_causal_bart, c(common, list(n_chains = 0L))))
 expect_error(do.call(
   irt_causal_bart,
   c(common, list(n_chains = 2L, n_cores = 0L))
+))
+# n_cores is validated on every path, not only where it is used
+expect_error(do.call(
+  irt_causal_bart,
+  c(common, list(n_chains = 1L, n_cores = -3L))
+))
+expect_error(do.call(
+  irt_causal_bart,
+  c(common, list(n_chains = 1L, n_cores = NA_integer_))
+))
+# a negative theta_sd would otherwise freeze theta for the whole run and still
+# return an ordinary-looking ate
+expect_error(do.call(irt_causal_bart, c(common, list(theta_sd = -1))))
+expect_error(do.call(irt_causal_bart, c(common, list(theta_sd = 0))))
+expect_error(do.call(
+  irt_causal_bart,
+  c(common, list(theta_accept_target = 0))
+))
+expect_error(do.call(
+  irt_causal_bart,
+  c(common, list(theta_accept_target = 1))
 ))
 # explicit seeds must be distinct and the right length
 expect_error(do.call(

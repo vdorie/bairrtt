@@ -172,6 +172,31 @@ irt_causal_bart <- function(
   if (as.integer(n_trees) < 1L) {
     stop("'n_trees' must be >= 1")
   }
+  # A negative theta_sd is silently catastrophic rather than an error:
+  # rnorm(sd = -1) is NA, so every acceptance ratio is NA, so theta never moves
+  # for the whole run, and log() of it makes the Robbins-Monro clamp NaN so it
+  # can never recover. The run then returns an ordinary-looking ate.
+  if (
+    !is.numeric(theta_sd) ||
+      length(theta_sd) != 1L ||
+      is.na(theta_sd) ||
+      theta_sd <= 0
+  ) {
+    stop("'theta_sd' must be a single positive number")
+  }
+  if (
+    !is.numeric(theta_accept_target) ||
+      length(theta_accept_target) != 1L ||
+      is.na(theta_accept_target) ||
+      theta_accept_target <= 0 ||
+      theta_accept_target >= 1
+  ) {
+    stop("'theta_accept_target' must be a single number in (0, 1)")
+  }
+  n_cores <- as.integer(n_cores)
+  if (length(n_cores) != 1L || is.na(n_cores) || n_cores < 1L) {
+    stop("'n_cores' must be a single integer >= 1")
+  }
 
   # warmup_start delays WALNUTS adaptation until theta has settled; if it leaves
   # no adapting scans the item sampler would freeze at its initial tuning, so
@@ -219,6 +244,19 @@ irt_causal_bart <- function(
     }
     if (anyNA(seeds) || anyDuplicated(seeds) > 0L) {
       stop("'seeds' must be distinct and non-missing")
+    }
+    # Distinct is not enough once there is more than one bank: chain i consumes
+    # the whole block seeds[i] .. seeds[i] + n_traits - 1, so seeds closer
+    # together than n_traits overlap and two chains share a WALNUTS stream --
+    # a between-chain dependence in the very quantity irt_rhat() reports on.
+    if (n_traits > 1L && n_chains > 1L && min(diff(sort(seeds))) < n_traits) {
+      stop(
+        "'seeds' must be at least 'n_traits' = ",
+        n_traits,
+        " apart: each chain uses seeds[i] .. seeds[i] + n_traits - 1, one per ",
+        "item bank, and overlapping blocks make two chains share a sampler ",
+        "stream"
+      )
     }
   }
 
