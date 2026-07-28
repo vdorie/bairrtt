@@ -100,9 +100,16 @@ inline double log_sigmoid(double x) {
 //   alpha_i ~ Exponential(1)   (positive; sampled as alpha_i = exp(alpha_raw_i))
 //   beta_i  ~ Normal(0, beta_sd)
 //
+// Missing responses: a cell of Y that is NaN (R's NA_real_ arrives as one) is
+// MISSING and contributes nothing -- no lp term and no gradient term. That makes
+// the target the observed-data likelihood, which is the right one exactly when
+// the missingness is ignorable; see docs/design/missing-responses.md. The item
+// priors are untouched, so an item with no observed response is drawn from its
+// prior. The R side validates with is.na(), which is the same set of cells.
+//
 // Position vector `par` (length 2 * n_items) is c(alpha_raw[1..I], beta[1..I]).
 struct IrtLogpGrad {
-  MatrixXd Y;        // n_persons x n_items, 0/1 (owned copy)
+  MatrixXd Y;        // n_persons x n_items, 0/1/NaN (owned copy)
   VectorXd theta;    // length n_persons; refreshed each Gibbs scan
   double beta_sd;
 
@@ -128,9 +135,11 @@ struct IrtLogpGrad {
       double sum_resid = 0.0;  // sum_j (y - p), reused for the beta gradient
 
       for (int j = 0; j < n_persons; ++j) {
+        const double y = Y(j, i);
+        if (std::isnan(y)) continue;                // missing: drops out entirely
+
         const double d   = theta(j) - beta;
         const double eta = alpha * d;
-        const double y   = Y(j, i);
 
         lp += log_sigmoid((2.0 * y - 1.0) * eta);   // y log p + (1-y) log(1-p)
 

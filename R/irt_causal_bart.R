@@ -488,7 +488,17 @@ irt_causal_bart_chain <- function(
   beta_mat <- lapply(seq_len(n_traits), function(k) {
     matrix(beta[[k]], n_persons, n_items[k], byrow = TRUE)
   })
-  sign_mat <- lapply(banks, function(bank) 2 * bank - 1)
+  # A missing cell is dropped from the item likelihood. Zeroing its sign is
+  # exact, not merely convenient: the cell then contributes
+  # plogis(0, log.p = TRUE) = -log 2 to the current and the proposed sum alike,
+  # and the acceptance ratio is a difference of the two, so it cancels. Not
+  # na.rm = TRUE, which would also swallow an NA arriving from anywhere else.
+  # See docs/design/missing-responses.md.
+  sign_mat <- lapply(banks, function(bank) {
+    s <- 2 * bank - 1
+    s[is.na(s)] <- 0
+    s
+  })
 
   response_fitted <- response_samples$train
   assignment_fitted <- assignment_samples$train

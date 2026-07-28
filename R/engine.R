@@ -183,6 +183,10 @@ print.irt_item_sampler <- function(x, ...) {
 # --- internal helpers --------------------------------------------------------
 
 # Coerce to a plain double 0/1 matrix (Eigen::Map<MatrixXd> needs double).
+# NA is kept: a missing cell is dropped from the item likelihood, in the C++
+# gradient block and in the theta Metropolis ratio alike. See
+# docs/design/missing-responses.md. NaN counts as missing too, so this predicate
+# and the C++ std::isnan() agree on exactly one set of cells.
 as_response_matrix <- function(responses) {
   if (is.data.frame(responses)) {
     responses <- as.matrix(responses)
@@ -191,12 +195,14 @@ as_response_matrix <- function(responses) {
     stop("'responses' must be a matrix or data frame")
   }
   if (!is.numeric(responses)) {
-    stop("'responses' must be numeric (0/1)")
+    stop("'responses' must be numeric (0/1/NA)")
   }
   storage.mode(responses) <- "double"
-  bad <- responses != 0 & responses != 1
-  if (anyNA(responses) || any(bad)) {
-    stop("'responses' must contain only 0 and 1")
+  # The observed mask leads the chain so that a missing cell short-circuits to
+  # FALSE rather than NA -- any(NA) is NA, and if (NA) is an error.
+  observed <- !is.na(responses)
+  if (any(observed & responses != 0 & responses != 1)) {
+    stop("'responses' must contain only 0, 1, and NA")
   }
   responses
 }
@@ -206,13 +212,14 @@ as_response_matrix <- function(responses) {
 # differ between banks, but every bank must cover the same persons in the same
 # order -- row j is person j throughout.
 as_response_banks <- function(responses) {
-  if (!is.list(responses) || is.data.frame(responses)) {
-    return(list(as_response_matrix(responses)))
+  banks <- if (!is.list(responses) || is.data.frame(responses)) {
+    list(as_response_matrix(responses))
+  } else {
+    if (length(responses) == 0L) {
+      stop("'responses' must contain at least one item bank")
+    }
+    lapply(responses, as_response_matrix)
   }
-  if (length(responses) == 0L) {
-    stop("'responses' must contain at least one item bank")
-  }
-  banks <- lapply(responses, as_response_matrix)
   n_persons <- vapply(banks, nrow, integer(1L))
   if (any(n_persons != n_persons[1L])) {
     stop(
@@ -221,7 +228,54 @@ as_response_banks <- function(responses) {
       paste(n_persons, collapse = ", ")
     )
   }
+  for (k in seq_along(banks)) {
+    warn_all_missing(banks[[k]], if (length(banks) == 1L) NULL else k)
+  }
   banks
+}
+
+# Neither case is an error: both are legitimate in a matrix-sampled design and
+# neither breaks the sampler. An item nobody answered has a flat likelihood, so
+# its (alpha, beta) are prior draws; a person with nothing observed in a bank
+# gets a theta informed only by the prior and by y and z. Both are also a good
+# sign the data were assembled wrong. See "Degenerate data" in
+# docs/design/missing-responses.md.
+warn_all_missing <- function(bank, k = NULL) {
+  where <- if (is.null(k)) "" else sprintf(" in item bank %d", k)
+  observed <- !is.na(bank)
+  empty_items <- which(colSums(observed) == 0L)
+  if (length(empty_items) > 0L) {
+    warning(sprintf(
+      paste0(
+        "%d item(s)%s have no observed response (column %s); their 'alpha' ",
+        "and 'beta' are draws from the prior."
+      ),
+      length(empty_items),
+      where,
+      abbreviate_indices(empty_items)
+    ))
+  }
+  empty_persons <- which(rowSums(observed) == 0L)
+  if (length(empty_persons) > 0L) {
+    warning(sprintf(
+      paste0(
+        "%d person(s)%s have no observed response (row %s); their 'theta' is ",
+        "informed only by the prior and by 'y' and 'z'."
+      ),
+      length(empty_persons),
+      where,
+      abbreviate_indices(empty_persons)
+    ))
+  }
+  invisible(NULL)
+}
+
+# The first few indices, so a warning about 900 empty rows stays readable.
+abbreviate_indices <- function(i, n_show = 5L) {
+  if (length(i) <= n_show) {
+    return(paste(i, collapse = ", "))
+  }
+  paste0(paste(i[seq_len(n_show)], collapse = ", "), ", ...")
 }
 
 # Observed covariates as a data frame, or NULL. Kept as a frame rather than a
