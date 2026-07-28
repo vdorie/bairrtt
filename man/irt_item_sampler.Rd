@@ -15,7 +15,9 @@ irt_item_sampler(
 }
 \arguments{
 \item{responses}{Integer/numeric matrix of 0/1 item responses, persons in
-rows and items in columns (\code{n_persons} x \code{n_items}). Coerced to double.}
+rows and items in columns (\code{n_persons} x \code{n_items}). Coerced to double.
+\code{NA} marks an unanswered item and is dropped from the item likelihood; an
+item with nothing observed is then drawn from its prior.}
 
 \item{alpha}{Numeric vector of initial discriminations, length \code{n_items},
 all positive.}

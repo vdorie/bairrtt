@@ -18,6 +18,8 @@
 #'
 #' @param responses Integer/numeric matrix of 0/1 item responses, persons in
 #'   rows and items in columns (`n_persons` x `n_items`). Coerced to double.
+#'   `NA` marks an unanswered item and is dropped from the item likelihood; an
+#'   item with nothing observed is then drawn from its prior.
 #' @param alpha Numeric vector of initial discriminations, length `n_items`,
 #'   all positive.
 #' @param beta Numeric vector of initial difficulties, length `n_items`.
@@ -147,7 +149,8 @@ irt_tuning <- function(sampler) {
 #' `c(log(alpha), beta)`.
 #'
 #' @param par Numeric vector `c(log(alpha), beta)`, length `2 * n_items`.
-#' @param responses 0/1 response matrix (`n_persons` x `n_items`).
+#' @param responses 0/1 response matrix (`n_persons` x `n_items`); `NA` cells
+#'   are dropped from the likelihood and its gradient.
 #' @param theta Numeric vector of person abilities, length `n_persons`.
 #' @param beta_sd Prior standard deviation for the item difficulties.
 #' @return A list with `value` (the log-posterior) and `gradient`.

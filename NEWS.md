@@ -55,6 +55,15 @@
   conditional and returned alongside the other draws. `x = NULL` keeps the
   previous model and the previous draws.
 
+* Response matrices may contain `NA`. A missing cell is dropped from that
+  person's item likelihood, in the gradient block and in the `theta` acceptance
+  ratio alike, which is the observed-data likelihood and so valid under
+  ignorable missingness (Rubin 1976) --- including the planned missingness of a
+  rotated booklet or a matrix-sampled design. Omits that depend on the trait are
+  not ignorable, and scoring them `0` remains the user's call. Items and persons
+  with nothing observed warn rather than error. Complete data fits exactly as
+  before.
+
 * `simulate_irt_causal()` generates data from the fitted model, with `n_traits`
   banks, a per-trait `prognostic` coefficient, and `n_covariates`
   covariates that confound through the trait, the assignment, and the outcome.

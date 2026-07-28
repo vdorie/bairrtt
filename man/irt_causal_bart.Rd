@@ -32,7 +32,11 @@ irt_causal_bart(
 \item{responses}{Either a \code{n_persons} x \code{n_items} matrix (or data frame) of
 0/1 item responses --- the single-trait case --- or a list of such matrices,
 one item bank per latent trait. Every item loads on exactly one trait; banks
-may differ in item count but must cover the same persons in the same order.}
+may differ in item count but must cover the same persons in the same order.
+\code{NA} marks an item a person did not answer and is dropped from that person's
+item likelihood, which is valid under the ignorability assumption below.
+Items and persons with nothing observed are allowed --- a rotated booklet
+design produces them --- but warn.}
 
 \item{y}{Numeric outcome, length \code{n_persons}.}
 
@@ -194,6 +198,15 @@ not benign: adjusting for a mismeasured confounder leaves residual
 confounding whose direction is not guaranteed to be conservative (Greenland
 1980; Ogburn and VanderWeele 2012). Fewer or noisier items attenuate the
 estimate toward zero, the usual measurement-error signature.
+\item \strong{Missing responses are ignorable.} \code{NA} cells are dropped from the item
+likelihood, which is right when they are missing at random given the
+observed responses (Rubin 1976). Planned missingness --- booklet rotation,
+matrix sampling --- satisfies this by construction. Omitted responses that
+depend on the trait itself do not, and are the usual case in achievement
+testing; scoring those \code{0} is a substantive choice the package will not
+make for you. Missingness that depends on \code{z} is differential measurement
+by arm, which is the exclusion violation above arriving by a second route.
+See \code{docs/design/missing-responses.md}.
 \item \strong{SUTVA}, as for any such estimand.
 }
 

@@ -50,6 +50,15 @@
 #'   confounding whose direction is not guaranteed to be conservative (Greenland
 #'   1980; Ogburn and VanderWeele 2012). Fewer or noisier items attenuate the
 #'   estimate toward zero, the usual measurement-error signature.
+#' * **Missing responses are ignorable.** `NA` cells are dropped from the item
+#'   likelihood, which is right when they are missing at random given the
+#'   observed responses (Rubin 1976). Planned missingness --- booklet rotation,
+#'   matrix sampling --- satisfies this by construction. Omitted responses that
+#'   depend on the trait itself do not, and are the usual case in achievement
+#'   testing; scoring those `0` is a substantive choice the package will not
+#'   make for you. Missingness that depends on `z` is differential measurement
+#'   by arm, which is the exclusion violation above arriving by a second route.
+#'   See `docs/design/missing-responses.md`.
 #' * **SUTVA**, as for any such estimand.
 #'
 #' Because the estimand is a contrast of the response surface at `z = 1` and
@@ -64,6 +73,10 @@
 #'   0/1 item responses --- the single-trait case --- or a list of such matrices,
 #'   one item bank per latent trait. Every item loads on exactly one trait; banks
 #'   may differ in item count but must cover the same persons in the same order.
+#'   `NA` marks an item a person did not answer and is dropped from that person's
+#'   item likelihood, which is valid under the ignorability assumption below.
+#'   Items and persons with nothing observed are allowed --- a rotated booklet
+#'   design produces them --- but warn.
 #' @param y Numeric outcome, length `n_persons`.
 #' @param z Binary (0/1) treatment, length `n_persons`.
 #' @param x Optional observed covariates: a matrix or data frame with

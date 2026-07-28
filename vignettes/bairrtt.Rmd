@@ -43,12 +43,16 @@ stating up front:
 * **The items must be measured before treatment.** If the responses postdate
   `z`, `theta` is a mediator or a collider rather than a confounder, and
   adjusting for it can move the answer in either direction.
-* **`theta` is assumed to be the entire confounder.** There is no covariate
-  argument, so anything not routed through the latent trait is unadjusted.
+* **`(theta, x)` is assumed to be the entire confounder.** Anything routed
+  through neither the latent trait nor the covariates passed as `x` is
+  unadjusted, and with `x = NULL` the trait is being asked to carry all of it.
 * **The measurement model does the identifying**, so misspecifying it is not
   benign. Fewer or noisier items attenuate the estimate toward zero, and
   residual confounding from a mismeasured adjustment variable is not guaranteed
   to be conservative in direction.
+* **Missing responses are assumed ignorable.** `NA` cells drop out of the item
+  likelihood, which is right for planned missingness and wrong for omits that
+  depend on the trait.
 
 A comparator worth running: put the sum score, or the raw responses, straight
 into the outcome surface. That needs weaker assumptions than the 2PL, and if the
@@ -244,6 +248,40 @@ simx$gamma
 Read those as *conditioning* coefficients, not as structural effects of `x` on
 the trait --- they describe the population the traits are being estimated
 within, and are routinely over-interpreted.
+
+## Missing responses
+
+Real response matrices have holes: forms rotate, respondents skip, and matrix-
+sampled designs plan the holes deliberately. Put `NA` in the cell and it drops
+out of that person's item likelihood --- everything else about the person, `y`
+and `z` included, still contributes.
+
+```{r missing}
+resp <- sim$responses
+set.seed(1)
+resp[matrix(runif(length(resp)) < 0.2, nrow(resp), ncol(resp))] <- NA
+mean(is.na(resp))                      # 20% of cells unanswered
+
+fit_missing <- irt_causal_bart(
+  resp, sim$y, sim$z,
+  n_burnin = 200, n_sampling = 400, n_chains = 2, seed = 1
+)
+quantile(fit_missing$ate, c(0.025, 0.975))
+```
+
+Neither obvious workaround is a good idea. Dropping persons with any missing
+item removes nearly everyone at this rate, and it drops them from the *estimand*
+as well as the measurement model --- the answer is then an effect among
+completers. Scoring the gaps `0` is the achievement-testing convention for
+genuine omits, but applied to accidental missingness it biases `theta` downward,
+and `theta` is the confounder, so the bias lands on the treatment effect.
+
+Which of those you actually want is a substantive question about the design, and
+the package will not guess: it treats `NA` as ignorable and says so. Items and
+persons with nothing observed at all are allowed, since a rotated booklet
+produces them, but they warn --- an item nobody answered is a draw from its
+prior, and a person who answered nothing has a `theta` informed only by the
+prior and by `y` and `z`.
 
 ## More than one latent trait
 

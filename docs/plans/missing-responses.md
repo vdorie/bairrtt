@@ -84,3 +84,46 @@ and in the `theta` Metropolis ratio alike. Complete data fits exactly as before.
 - A person with an all-`NA` bank row fits without error and yields finite
   `theta` draws under `keep_theta = TRUE`; both degenerate cases warn.
 - `R CMD check`, `air format .`, and lint clean.
+
+## Status
+
+LANDED 2026-07-27, as designed. ~10 lines of C++, ~60 of R, as scoped.
+
+Verification:
+  - Complete-data regression: bitwise identical. Every element of a
+    single-chain fit, `call` included, still `identical()` to the pre-change
+    build.
+  - tinytest 206/206 (19 new in `test-missing.R`), `R CMD check` OK, lint
+    clean.
+  - Exactness: `lp_complete - lp_masked` matches the summed masked-cell terms
+    to 1.3e-12, the alpha gradient to 8.9e-15, the beta gradient to 2.1e-14. An
+    all-`NA` item's gradient equals its prior's exactly (difference 0, not
+    merely small).
+  - Finite differences through a matrix with 20% `NA` including one all-`NA`
+    item: 2.6e-08, against the same 1e-4 tolerance the complete-data check
+    uses.
+  - Recovery at 20% MCAR on 500 persons / 30 items: 95% interval [-0.353,
+    0.140] covers the true -0.2; `cor()` of posterior-mean item parameters with
+    truth 0.769 (alpha) and 0.989 (beta).
+
+The NA-as-zero comparator, reported rather than asserted, came out mixed and is
+worth reading carefully. Scoring the same missing cells `0` visibly damages the
+measurement model - alpha correlation drops 0.769 to 0.618 - which is the
+expected signature and the reason to prefer the mask. But the ATE difference is
+not resolvable at one replicate: bias +0.101 masked against +0.145 zeroed, with
+both covering, and the complete-data fit on the same seed sitting between them
+at +0.119. That ordering is Monte Carlo noise, not evidence. It is exactly the
+question TODO `coverage-study` exists to settle over replications, and the
+comparator belongs there rather than in the test suite.
+
+Two things the plan did not anticipate:
+  - `as_response_banks()` returned early for the bare-matrix case, so the
+    degenerate-data warnings added at the end of it never fired for
+    single-trait input - caught by the test, not by inspection. The early
+    return is now a branch that assigns `banks`.
+  - The vignette still said "there is no covariate argument", left over from
+    the covariates arc. Corrected while adding the missing-data section.
+
+Left as scoped-out and filed as TODO `missing-mechanism`: models for the
+missingness mechanism, and the omit-vs-not-reached distinction. Missing `y`,
+`z`, or `x` remain errors.

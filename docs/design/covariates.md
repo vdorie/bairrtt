@@ -3,7 +3,7 @@
 Status: LANDED 2026-07-27, as proposed. Landing notes and verification numbers
 are in `docs/plans/covariates.md`, "Status". Raised by the pre-release
 statistical review as one of two blockers for applied use; the other,
-`missing-responses`, is still open.
+`missing-responses`, has since landed too.
 
 ## Problem
 

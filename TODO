@@ -9,11 +9,18 @@ planning/implementation/review process is docs/plans/README.md.
 Seeded 2026-07-27 from the state of the initial import; prune freely.
 
 items
-  missing-responses: as_response_matrix() hard-errors on NA, and every
-    real response matrix has some. mirt/TAM/ltm drop the missing (i, j)
-    terms under MAR by default. Needs a mask in the C++ item loop
-    (IrtLogpGrad::operator()) and in the R Metropolis ratio. Blocking for
-    real use.
+  missing-mechanism: NA responses are dropped as ignorable, which is
+    right for planned missingness and wrong for the omitted responses
+    that dominate achievement testing, where skipping depends on the
+    trait being measured. Wants a response-propensity model (Holman and
+    Glas 2005; Pohl et al. 2014) as an option, and the omit-vs-not-
+    reached distinction that goes with it. Sharper here than in plain
+    IRT because theta's full conditional already sees y and z, so
+    missingness driven by treatment status is differential measurement by
+    arm - the exclusion violation by a second route. Scope with
+    cut-diagnostic; the two share the "what is theta allowed to see"
+    question. See docs/design/missing-responses.md, "What is dropped, and
+    what that assumes".
 
   coverage-study: the package's one claim is that its interval covers,
     and nothing checks it over replications. The recorded verifications
@@ -32,7 +39,9 @@ items
     fit statistic (S-X^2, Orlando and Thissen 2000), a local dependence
     check (Yen's Q3), and empirical reliability, which is one line given
     keep_theta. Also a warning for zero-variance items, whose likelihood
-    is monotone in beta and held only by the prior. Related:
+    is monotone in beta and held only by the prior - the all-missing
+    limit of that already warns, from warn_all_missing() in R/engine.R,
+    so this extends an existing check rather than adding one. Related:
     cut-diagnostic below.
 
   cut-diagnostic: theta's full conditional includes the outcome and

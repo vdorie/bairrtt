@@ -9,7 +9,8 @@ irt_item_logdensity(par, responses, theta, beta_sd = 10)
 \arguments{
 \item{par}{Numeric vector \code{c(log(alpha), beta)}, length \code{2 * n_items}.}
 
-\item{responses}{0/1 response matrix (\code{n_persons} x \code{n_items}).}
+\item{responses}{0/1 response matrix (\code{n_persons} x \code{n_items}); \code{NA} cells
+are dropped from the likelihood and its gradient.}
 
 \item{theta}{Numeric vector of person abilities, length \code{n_persons}.}
 
