@@ -430,9 +430,9 @@ irt_causal_bart_chain <- function(
   ])
   control <- dbarts::dbartsControl(
     n.chains = 1L,
-    n.threads = as.integer(n_threads),
-    n.trees = as.integer(n_trees)
+    n.threads = as.integer(n_threads)
   )
+  forests <- list(dbarts::dbartsForests$forest(n.trees = as.integer(n_trees)))
 
   # Trait columns plus any covariates, in the layout both BART models take. The
   # covariates are static for the whole run; only the trait columns are ever
@@ -446,7 +446,8 @@ irt_causal_bart_chain <- function(
   response_model <- dbarts::dbarts(
     reformulate(c("z", theta_names, x_names), response = "y"),
     data.frame(y = y, z = z, model_frame(theta)),
-    control = control
+    control = control,
+    forests = forests
   )
   for (nm in theta_names) {
     response_model$setCutPoints(cutpoints, nm)
@@ -458,7 +459,8 @@ irt_causal_bart_chain <- function(
   assignment_model <- dbarts::dbarts(
     reformulate(c(theta_names, x_names), response = "z"),
     data.frame(z = z, model_frame(theta)),
-    control = control
+    control = control,
+    forests = forests
   )
   for (nm in theta_names) {
     assignment_model$setCutPoints(cutpoints, nm)

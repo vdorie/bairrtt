@@ -59,6 +59,22 @@ expect_identical(fit$ate, fit2$ate)
 expect_identical(fit$alpha, fit2$alpha)
 expect_identical(fit$theta, fit2$theta)
 
+# --- n_trees reaches both BART surfaces: 7 and 8 trees give different draws ---
+fit_trees <- function(n_trees) {
+  irt_causal_bart(
+    sim$responses,
+    sim$y,
+    sim$z,
+    n_trees = n_trees,
+    n_burnin = 20L,
+    n_sampling = 20L,
+    warmup_start = 10L,
+    n_chains = 1L,
+    seed = 3L
+  )$ate
+}
+expect_false(identical(fit_trees(7L), fit_trees(8L)))
+
 # --- keep_theta = FALSE (default) drops the theta draws ----------------------
 fit_nt <- irt_causal_bart(
   sim$responses,
