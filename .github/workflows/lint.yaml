@@ -34,11 +34,11 @@ jobs:
 
       # local::. below builds bairrtt, which needs dbarts 1.0-0 (not yet on
       # CRAN). Same temporary step as check-standard.yaml; delete both together.
-      - name: Install dbarts from the release branch
+      - name: Install dbarts from its main branch
         shell: Rscript {0}
         run: |
           install.packages("remotes", repos = "https://cloud.r-project.org")
-          remotes::install_github("vdorie/dbarts@bartcore", upgrade = "never")
+          remotes::install_github("vdorie/dbarts@main", upgrade = "never")
 
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:

@@ -24,7 +24,7 @@ Gibbs loop, exposed as a single entry point.
 
 ```r
 # install.packages("remotes")
-remotes::install_github("vdorie/dbarts@bartcore")   # dbarts 1.0-0, not yet on CRAN
+remotes::install_github("vdorie/dbarts")         # dbarts 1.0-0, not yet on CRAN
 remotes::install_github("vdorie/bairrtt")
 ```
 
